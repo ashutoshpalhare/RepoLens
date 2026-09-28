@@ -9,5 +9,13 @@ export default defineConfig({
     server: {
       entry: "server",
     },
+    spa: {
+      enabled: true,
+    },
+  },
+
+  // Optional but recommended for pure static hosting
+  nitro: {
+    preset: "static",
   },
 });
