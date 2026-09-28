@@ -24,6 +24,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
 
       - name: Install dependencies
         run: npm install
@@ -33,25 +34,52 @@ jobs:
           BASE_PATH: /RepoLens/
         run: npm run build
 
-      - name: Add SPA fallback and disable Jekyll
+      - name: Debug build output
         run: |
-          cp dist/client/index.html dist/client/404.html
-          touch dist/client/.nojekyll
+          echo "=== Listing possible output dirs ==="
+          ls -la
+          ls -la dist 2>/dev/null || true
+          ls -la dist/client 2>/dev/null || true
+          ls -la .output 2>/dev/null || true
+          ls -la .output/public 2>/dev/null || true
+          find . -name "index.html" -not -path "./node_modules/*" 2>/dev/null | head -20
+
+      - name: Prepare static files for GitHub Pages
+        run: |
+          # Try common output locations
+          if [ -f "dist/client/index.html" ]; then
+            OUT="dist/client"
+          elif [ -f "dist/index.html" ]; then
+            OUT="dist"
+          elif [ -f ".output/public/index.html" ]; then
+            OUT=".output/public"
+          elif [ -f "dist/client/_shell.html" ]; then
+            # SPA shell case
+            OUT="dist/client"
+            cp dist/client/_shell.html dist/client/index.html
+          else
+            echo "ERROR: Could not find index.html in any known location"
+            find . -name "*.html" -not -path "./node_modules/*" | head -30
+            exit 1
+          fi
+
+          echo "Using output directory: $OUT"
+          cp "$OUT/index.html" "$OUT/404.html"
+          touch "$OUT/.nojekyll"
+          echo "OUT_DIR=$OUT" >> $GITHUB_ENV
 
       - uses: actions/configure-pages@v5
 
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: dist/client
+          path: ${{ env.OUT_DIR }}
 
   deploy:
     needs: build
     runs-on: ubuntu-latest
-
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-
     steps:
       - id: deployment
         uses: actions/deploy-pages@v4
