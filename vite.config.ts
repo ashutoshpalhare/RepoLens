@@ -14,7 +14,6 @@ export default defineConfig({
     },
   },
 
-  // Optional but recommended for pure static hosting
   nitro: {
     preset: "static",
   },
