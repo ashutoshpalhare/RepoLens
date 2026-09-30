@@ -122,12 +122,35 @@ export interface DependencyGraph {
   avgFanOut: number;
 }
 
+export type GitHubErrorKind =
+  | "not_found"
+  | "rate_limit"
+  | "network"
+  | "unknown"
+  | "empty"
+  | "auth"
+  | "offline";
+
 export class GitHubError extends Error {
+  resetAt: number | null;
+  remaining: number | null;
+
   constructor(
     message: string,
-    public kind: "not_found" | "rate_limit" | "network" | "unknown" | "empty",
+    public kind: GitHubErrorKind,
     public status?: number,
+    options?: { resetAt?: number | null; remaining?: number | null },
   ) {
     super(message);
+    this.name = "GitHubError";
+    this.resetAt = options?.resetAt ?? null;
+    this.remaining = options?.remaining ?? null;
   }
 }
+
+export type RateLimitState = {
+  limit: number | null;
+  remaining: number | null;
+  resetAt: number | null;
+  updatedAt: number | null;
+};
