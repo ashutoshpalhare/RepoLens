@@ -22,7 +22,11 @@ export function SkeletonLines({ rows = 6 }: { rows?: number }) {
   return (
     <div className="space-y-2 p-4" aria-hidden>
       {Array.from({ length: rows }).map((_, i) => (
-        <div key={i} className="relative overflow-hidden rounded bg-surface-2" style={{ height: 12, width: `${95 - i * 7}%` }}>
+        <div
+          key={i}
+          className="relative overflow-hidden rounded bg-surface-2"
+          style={{ height: 12, width: `${95 - i * 7}%` }}
+        >
           <div className="animate-sweep absolute inset-0 bg-gradient-to-r from-transparent via-border-strong to-transparent" />
         </div>
       ))}
@@ -54,7 +58,7 @@ export function EmptyBlock({
 
 function iconFor(kind: string) {
   if (kind === "rate_limit") return Clock;
-  if (kind === "network") return WifiOff;
+  if (kind === "network" || kind === "offline") return WifiOff;
   if (kind === "not_found") return SearchX;
   return AlertTriangle;
 }
@@ -62,16 +66,19 @@ function iconFor(kind: string) {
 export function ErrorBlock({
   error,
   onRetry,
+  onOpenSettings,
   className,
 }: {
   error: unknown;
   onRetry?: () => void;
+  onOpenSettings?: () => void;
   className?: string;
 }) {
   const kind = error instanceof GitHubError ? error.kind : "unknown";
   const message =
     error instanceof Error ? error.message : "Something went wrong loading this repository.";
   const Icon = iconFor(kind);
+  const resetAt = error instanceof GitHubError ? error.resetAt : null;
 
   return (
     <div
@@ -86,23 +93,37 @@ export function ErrorBlock({
       </div>
       <div>
         <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-destructive">
-          {kind.replace("_", " ")}
+          {kind.replace(/_/g, " ")}
         </p>
         <p className="mt-1 max-w-sm text-sm leading-relaxed text-foreground">{message}</p>
         {kind === "rate_limit" && (
           <p className="mt-2 max-w-sm text-xs text-muted-foreground">
-            Unauthenticated GitHub API requests are limited to 60 per hour per IP address.
+            Unauthenticated requests are limited to 60/hour. Add a personal access token in Settings
+            to raise the limit
+            {resetAt ? ` · resets around ${new Date(resetAt).toLocaleTimeString()}` : ""}.
           </p>
         )}
       </div>
-      {onRetry && (
-        <button
-          onClick={onRetry}
-          className="mt-1 rounded-md border border-border-strong bg-surface-2 px-3 py-1.5 font-mono text-xs text-foreground transition-colors hover:bg-accent"
-        >
-          Try again
-        </button>
-      )}
+      <div className="mt-1 flex flex-wrap items-center justify-center gap-2">
+        {onRetry && (
+          <button
+            type="button"
+            onClick={onRetry}
+            className="rounded-md border border-border-strong bg-surface-2 px-3 py-1.5 font-mono text-xs text-foreground transition-colors hover:bg-accent"
+          >
+            Try again
+          </button>
+        )}
+        {(kind === "rate_limit" || kind === "auth") && onOpenSettings && (
+          <button
+            type="button"
+            onClick={onOpenSettings}
+            className="rounded-md bg-primary px-3 py-1.5 font-mono text-xs text-primary-foreground transition-colors hover:bg-primary/90"
+          >
+            Open settings
+          </button>
+        )}
+      </div>
     </div>
   );
 }
