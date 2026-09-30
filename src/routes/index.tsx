@@ -1,8 +1,9 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
-import { ArrowRight, Boxes, Github, Layers, ScanSearch } from "lucide-react";
-import { useState } from "react";
+import { ArrowRight, Boxes, Github, Layers, ScanSearch, X } from "lucide-react";
+import { useEffect, useState } from "react";
 import { SocialDock } from "@/components/repolens/SocialDock";
 import { parseRepoInput } from "@/lib/github";
+import { clearRecentRepos, getRecentRepos, type RecentRepo } from "@/lib/recent";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -30,6 +31,11 @@ function Landing() {
   const navigate = useNavigate();
   const [value, setValue] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [recent, setRecent] = useState<RecentRepo[]>([]);
+
+  useEffect(() => {
+    setRecent(getRecentRepos());
+  }, []);
 
   const submit = (raw: string) => {
     const ref = parseRepoInput(raw);
@@ -72,7 +78,20 @@ function Landing() {
             <input
               id="repo"
               value={value}
-              onChange={(e) => setValue(e.target.value)}
+              onChange={(e) => {
+                setValue(e.target.value);
+                const ref = parseRepoInput(e.target.value);
+                if (ref && /github\.com/i.test(e.target.value)) {
+                  // soft validate only; user still clicks Explore
+                }
+              }}
+              onPaste={(e) => {
+                const text = e.clipboardData.getData("text");
+                const ref = parseRepoInput(text);
+                if (ref) {
+                  // allow default paste; user can press Explore
+                }
+              }}
               placeholder="https://github.com/owner/repo"
               autoComplete="off"
               spellCheck={false}
@@ -92,6 +111,38 @@ function Landing() {
             </p>
           )}
         </form>
+
+        {recent.length > 0 && (
+          <div className="mt-6">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+                Recent
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  clearRecentRepos();
+                  setRecent([]);
+                }}
+                className="inline-flex items-center gap-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
+              >
+                <X className="size-3" /> Clear
+              </button>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {recent.map((r) => (
+                <Link
+                  key={`${r.owner}/${r.repo}`}
+                  to="/r/$owner/$repo"
+                  params={{ owner: r.owner, repo: r.repo }}
+                  className="rounded-md border border-border bg-surface px-2.5 py-1 font-mono text-xs text-muted-foreground transition-colors hover:border-border-strong hover:text-foreground"
+                >
+                  {r.owner}/{r.repo}
+                </Link>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="mt-6 flex flex-wrap items-center gap-2 text-sm">
           <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
