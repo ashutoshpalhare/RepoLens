@@ -395,3 +395,60 @@ export function formatBytes(bytes: number) {
   const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
   return `${(bytes / 1024 ** i).toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
 }
+
+/** ASCII / Unicode directory tree for copy-paste (README, prompts, PRs). */
+export function formatTreeAscii(
+  nodes: FileNode[],
+  options?: {
+    maxDepth?: number;
+    foldersOnly?: boolean;
+    rootName?: string;
+  },
+): string {
+  const maxDepth = options?.maxDepth ?? Infinity;
+  const foldersOnly = options?.foldersOnly ?? false;
+  const rootName = options?.rootName?.trim();
+  const lines: string[] = [];
+
+  if (rootName) lines.push(rootName.endsWith("/") ? rootName : `${rootName}/`);
+
+  const walk = (list: FileNode[], prefix: string, depth: number) => {
+    if (depth > maxDepth) return;
+    const visible = foldersOnly ? list.filter((n) => n.type === "dir") : list;
+    visible.forEach((node, index) => {
+      const isLast = index === visible.length - 1;
+      const branch = isLast ? "└── " : "├── ";
+      const childPrefix = prefix + (isLast ? "    " : "│   ");
+      const label =
+        node.type === "dir" ? `${node.name}/` : node.name;
+      lines.push(`${prefix}${branch}${label}`);
+      if (node.type === "dir" && node.children?.length && depth < maxDepth) {
+        walk(node.children, childPrefix, depth + 1);
+      }
+    });
+  };
+
+  walk(nodes, rootName ? "" : "", 1);
+  return lines.join("\n");
+}
+
+export async function copyText(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.left = "-9999px";
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand("copy");
+      document.body.removeChild(ta);
+      return ok;
+    } catch {
+      return false;
+    }
+  }
+}
