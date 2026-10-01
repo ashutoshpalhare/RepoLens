@@ -15,7 +15,13 @@ export function fuzzyScore(query: string, target: string): number {
     if (found === -1) return 0;
     streak = found === ti ? streak + 1 : 1;
     score += 10 + streak * 5;
-    if (found === 0 || t[found - 1] === "/" || t[found - 1] === "." || t[found - 1] === "-" || t[found - 1] === "_") {
+    if (
+      found === 0 ||
+      t[found - 1] === "/" ||
+      t[found - 1] === "." ||
+      t[found - 1] === "-" ||
+      t[found - 1] === "_"
+    ) {
       score += 20;
     }
     ti = found + 1;
@@ -35,4 +41,10 @@ export function fuzzyFilter<T>(
   return items
     .map((item) => ({ item, score: fuzzyScore(q, getText(item)) }))
     .filter((row) => row.score > 0)
-    .sort((a, b) => b.score - a.score || 
+    .sort(
+      (a, b) =>
+        b.score - a.score || getText(a.item).localeCompare(getText(b.item)),
+    )
+    .slice(0, limit)
+    .map((row) => row.item);
+}
