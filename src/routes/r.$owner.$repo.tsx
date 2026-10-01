@@ -1,14 +1,16 @@
-import { Link, Outlet, createFileRoute } from "@tanstack/react-router";
+import { Link, Outlet, createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Moon, ScanSearch, Settings2, Sun } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { GitHubStatus } from "@/components/repolens/GitHubStatus";
 import { OpenInMenu } from "@/components/repolens/OpenInMenu";
+import { QuickOpenModal } from "@/components/repolens/QuickOpenModal";
 import { SettingsModal } from "@/components/repolens/SettingsModal";
+import { ShortcutsModal } from "@/components/repolens/ShortcutsModal";
 import { ErrorBlock, LoadingBlock } from "@/components/repolens/StateBlocks";
 import { useRepo } from "@/hooks/useRepoData";
 import { useTheme } from "@/hooks/useTheme";
+import { githubDevUrl } from "@/lib/github";
 import { rememberRepo } from "@/lib/recent";
-import { useEffect } from "react";
 
 export const Route = createFileRoute("/r/$owner/$repo")({
   head: ({ params }) => {
@@ -32,11 +34,22 @@ const TABS = [
   { to: "/r/$owner/$repo/architecture", label: "Architecture", exact: false },
 ] as const;
 
+function isTypingTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) return false;
+  const tag = target.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+  if (target.isContentEditable) return true;
+  return Boolean(target.closest("[contenteditable='true']"));
+}
+
 function Workspace() {
   const { owner, repo } = Route.useParams();
+  const navigate = useNavigate();
   const { theme, toggle } = useTheme();
   const query = useRepo({ owner, repo });
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [quickOpen, setQuickOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
   useEffect(() => {
     if (query.data?.meta) {
@@ -48,9 +61,51 @@ function Workspace() {
     }
   }, [owner, repo, query.data?.meta]);
 
+  const filePaths = useMemo(() => {
+    if (!query.data?.entries) return [];
+    return query.data.entries.filter((e) => e.type === "blob").map((e) => e.path);
+  }, [query.data?.entries]);
+
   const onCredentialChange = useCallback(() => {
     void query.refetch();
   }, [query]);
+
+  const openFile = useCallback(
+    (path: string) => {
+      navigate({ to: "/r/$owner/$repo", params: { owner, repo } });
+      window.dispatchEvent(new CustomEvent("repolens:open-file", { detail: { path } }));
+    },
+    [navigate, owner, repo],
+  );
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (isTypingTarget(e.target)) return;
+      if (settingsOpen || quickOpen || shortcutsOpen) return;
+
+      const mod = e.metaKey || e.ctrlKey;
+
+      if (mod && e.key.toLowerCase() === "p") {
+        e.preventDefault();
+        setQuickOpen(true);
+        return;
+      }
+
+      if (e.key === "?" && !mod && !e.altKey) {
+        e.preventDefault();
+        setShortcutsOpen(true);
+        return;
+      }
+
+      if (e.key === "." && !mod && !e.altKey) {
+        e.preventDefault();
+        window.open(githubDevUrl(owner, repo), "_blank", "noopener,noreferrer");
+      }
+    };
+
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [owner, repo, settingsOpen, quickOpen, shortcutsOpen]);
 
   const branch = query.data?.meta.default_branch ?? "main";
 
@@ -95,7 +150,30 @@ function Workspace() {
             </Link>
           ))}
 
-          <GitHubStatus onOpenSettings={() => setSettingsOpen(true)} className="ml-1 hidden sm:inline-flex" />
+          <button
+            type="button"
+            onClick={() => setQuickOpen(true)}
+            disabled={!query.data}
+            title="Quick open (Ctrl/⌘ P)"
+            className="hidden rounded-md border border-border px-2 py-1.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground transition-colors hover:border-border-strong hover:text-foreground disabled:opacity-40 sm:inline-flex"
+          >
+            ⌘P
+          </button>
+
+          <GitHubStatus
+            onOpenSettings={() => setSettingsOpen(true)}
+            className="ml-1 hidden sm:inline-flex"
+          />
+
+          <button
+            type="button"
+            onClick={() => setShortcutsOpen(true)}
+            aria-label="Keyboard shortcuts"
+            title="Shortcuts (?)"
+            className="hidden rounded-md border border-border px-2 py-1.5 font-mono text-[10px] text-muted-foreground transition-colors hover:border-border-strong hover:text-foreground sm:inline-flex"
+          >
+            ?
+          </button>
 
           <button
             type="button"
@@ -141,6 +219,13 @@ function Workspace() {
         onClose={() => setSettingsOpen(false)}
         onCredentialChange={onCredentialChange}
       />
+      <QuickOpenModal
+        open={quickOpen}
+        onClose={() => setQuickOpen(false)}
+        paths={filePaths}
+        onSelect={openFile}
+      />
+      <ShortcutsModal open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { CodeViewer } from "@/components/repolens/CodeViewer";
 import { FileExplorer } from "@/components/repolens/FileExplorer";
 import { InsightsPanel } from "@/components/repolens/InsightsPanel";
@@ -23,6 +23,18 @@ function CodeWorkspace() {
     () => data?.entries.find((e) => e.path === path)?.size,
     [data?.entries, path],
   );
+
+  useEffect(() => {
+    const onOpen = (event: Event) => {
+      const detail = (event as CustomEvent<{ path?: string }>).detail;
+      if (detail?.path) {
+        setPath(detail.path);
+        setPane("Code");
+      }
+    };
+    window.addEventListener("repolens:open-file", onOpen);
+    return () => window.removeEventListener("repolens:open-file", onOpen);
+  }, []);
 
   if (!data) return null;
   const branch = data.meta.default_branch;
