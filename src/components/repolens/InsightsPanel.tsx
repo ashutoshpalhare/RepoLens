@@ -1,7 +1,9 @@
-import { GitFork, Scale, Star, CircleDot } from "lucide-react";
-import { formatBytes } from "@/lib/analysis";
+import { useMemo, useState } from "react";
+import { CircleDot, Copy, GitFork, Scale, Star } from "lucide-react";
+import { toast } from "sonner";
+import { copyText, formatBytes, formatTreeAscii } from "@/lib/analysis";
 import { cn } from "@/lib/utils";
-import type { RepoInsights, RepoMeta } from "@/types/repo";
+import type { FileNode, RepoInsights, RepoMeta } from "@/types/repo";
 
 export function Stat({
   label,
@@ -81,12 +83,34 @@ export function Section({
 export function InsightsPanel({
   meta,
   insights,
+  fileTree,
   onSelectFile,
 }: {
   meta: RepoMeta;
   insights: RepoInsights;
+  fileTree?: FileNode[];
   onSelectFile: (path: string) => void;
 }) {
+  const rootName = meta.full_name.split("/")[1] ?? meta.full_name;
+  const [depth, setDepth] = useState<2 | 3 | 99>(3);
+
+  const treeText = useMemo(() => {
+    if (!fileTree?.length) return "";
+    return formatTreeAscii(fileTree, {
+      maxDepth: depth,
+      rootName,
+    });
+  }, [fileTree, depth, rootName]);
+
+  const previewLines = treeText ? treeText.split("\n").slice(0, 36) : [];
+
+  const onCopyTree = async () => {
+    if (!treeText) return;
+    const ok = await copyText(treeText);
+    if (ok) toast.success("Directory tree copied");
+    else toast.error("Could not copy to clipboard");
+  };
+
   return (
     <aside className="flex h-full min-h-0 flex-col overflow-y-auto" aria-label="Repository insights">
       <Section title="Repository">
@@ -133,6 +157,7 @@ export function InsightsPanel({
           {insights.largestFiles.map((file) => (
             <li key={file.path}>
               <button
+                type="button"
                 onClick={() => onSelectFile(file.path)}
                 className="flex w-full items-baseline justify-between gap-3 rounded-md px-2 py-1 text-left transition-colors hover:bg-accent/70"
               >
@@ -145,6 +170,50 @@ export function InsightsPanel({
           ))}
         </ul>
       </Section>
+
+      {fileTree && fileTree.length > 0 && (
+        <Section
+          title="Directory tree"
+          action={
+            <button
+              type="button"
+              onClick={onCopyTree}
+              className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground transition-colors hover:border-border-strong hover:text-foreground"
+            >
+              <Copy className="size-3" />
+              Copy
+            </button>
+          }
+        >
+          <div className="mb-2 flex flex-wrap gap-1">
+            {(
+              [
+                [2, "Depth 2"],
+                [3, "Depth 3"],
+                [99, "All"],
+              ] as const
+            ).map(([d, label]) => (
+              <button
+                key={d}
+                type="button"
+                onClick={() => setDepth(d)}
+                className={cn(
+                  "rounded border px-1.5 py-0.5 font-mono text-[10px] transition-colors",
+                  depth === d
+                    ? "border-primary/40 bg-primary/10 text-primary"
+                    : "border-border text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <pre className="max-h-64 overflow-auto rounded-md border border-border bg-surface-2 p-2 font-mono text-[10px] leading-relaxed text-foreground/85">
+            {previewLines.join("\n")}
+            {treeText.split("\n").length > 36 ? "\n…" : ""}
+          </pre>
+        </Section>
+      )}
 
       <Section title="Structure">
         <ul className="space-y-1">

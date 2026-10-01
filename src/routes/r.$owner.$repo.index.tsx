@@ -42,6 +42,7 @@ function CodeWorkspace() {
         {PANES.map((p) => (
           <button
             key={p}
+            type="button"
             role="tab"
             aria-selected={pane === p}
             onClick={() => setPane(p)}
@@ -64,7 +65,12 @@ function CodeWorkspace() {
             pane === "Files" ? "block" : "hidden",
           )}
         >
-          <FileExplorer tree={data.fileTree} activePath={path} onSelect={select} />
+          <FileExplorer
+            tree={data.fileTree}
+            activePath={path}
+            onSelect={select}
+            rootName={repo}
+          />
         </div>
         <div className={cn("min-h-0 lg:block", pane === "Code" ? "block" : "hidden")}>
           <CodeViewer
@@ -81,7 +87,12 @@ function CodeWorkspace() {
             pane === "Insights" ? "block" : "hidden",
           )}
         >
-          <InsightsPanel meta={data.meta} insights={data.insights} onSelectFile={select} />
+          <InsightsPanel
+            meta={data.meta}
+            insights={data.insights}
+            fileTree={data.fileTree}
+            onSelectFile={select}
+          />
         </div>
       </div>
     </div>
