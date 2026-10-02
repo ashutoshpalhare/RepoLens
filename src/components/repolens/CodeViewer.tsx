@@ -1,4 +1,4 @@
-import { Check, Copy, ExternalLink, FileWarning, Image as ImageIcon } from "lucide-react";
+import { Check, Copy, ExternalLink, FileWarning, Image as ImageIcon, Link2 } from "lucide-react";
 import { Highlight, themes } from "prism-react-renderer";
 import { useEffect, useMemo, useState } from "react";
 import { FileTypeIcon } from "@/components/repolens/FileTypeIcon";
@@ -44,12 +44,20 @@ interface Props {
   path: string | null;
   size?: number;
   blobUrlBase?: string;
+  specialMode?: "symlink" | "submodule" | null;
 }
 
-export function CodeViewer({ ref_, branch, path, size, blobUrlBase }: Props) {
+export function CodeViewer({
+  ref_,
+  branch,
+  path,
+  size,
+  blobUrlBase,
+  specialMode = null,
+}: Props) {
   const binary = !!path && isBinaryPath(path);
   const tooLarge = (size ?? 0) > MAX_FILE_BYTES;
-  const shouldFetch = !!path && !binary && !tooLarge;
+  const shouldFetch = !!path && !binary && !tooLarge && !specialMode;
   const query = useFileContent(ref_, branch, shouldFetch ? path : null);
   const [copied, setCopied] = useState(false);
 
@@ -60,7 +68,7 @@ export function CodeViewer({ ref_, branch, path, size, blobUrlBase }: Props) {
   }, [copied]);
 
   const language = useMemo(() => (path ? (LANG[extOf(path)] ?? "text") : "text"), [path]);
-  const githubUrl = path && blobUrlBase ? `${blobUrlBase}/${path}` : null;
+  const githubUrl = path && blobUrlBase ? `${blobUrlBase}/${path.split("/").map(encodeURIComponent).join("/")}` : null;
 
   const copy = async () => {
     if (!query.data) return;
@@ -72,7 +80,6 @@ export function CodeViewer({ ref_, branch, path, size, blobUrlBase }: Props) {
     }
   };
 
-
   return (
     <section className="flex h-full min-h-0 flex-col bg-background" aria-label="Code viewer">
       <header className="flex h-10 shrink-0 items-center gap-2 border-b border-border bg-surface px-3">
@@ -80,9 +87,14 @@ export function CodeViewer({ ref_, branch, path, size, blobUrlBase }: Props) {
           <>
             <FileTypeIcon path={path} />
             <span className="truncate font-mono text-xs text-foreground">{path}</span>
-            {!!size && (
+            {!!size && !specialMode && (
               <span className="shrink-0 rounded border border-border bg-surface-2 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
                 {formatBytes(size)}
+              </span>
+            )}
+            {specialMode && (
+              <span className="shrink-0 rounded border border-border bg-surface-2 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                {specialMode}
               </span>
             )}
             <div className="ml-auto flex shrink-0 items-center gap-3">
@@ -128,6 +140,18 @@ export function CodeViewer({ ref_, branch, path, size, blobUrlBase }: Props) {
             title="Select a file to read it"
             hint="Pick any file from the explorer. Source files render with syntax highlighting and line numbers."
           />
+        ) : specialMode === "symlink" ? (
+          <EmptyBlock
+            icon={Link2}
+            title="Symbolic link"
+            hint="This entry is a git symlink. Open it on GitHub to see the target path."
+          />
+        ) : specialMode === "submodule" ? (
+          <EmptyBlock
+            icon={Link2}
+            title="Git submodule"
+            hint="This entry points to another repository. Open it on GitHub to browse the submodule."
+          />
         ) : binary ? (
           <EmptyBlock
             icon={ImageIcon}
@@ -138,7 +162,7 @@ export function CodeViewer({ ref_, branch, path, size, blobUrlBase }: Props) {
           <EmptyBlock
             icon={FileWarning}
             title={`File too large to render (${formatBytes(size ?? 0)})`}
-            hint={`Files above ${formatBytes(MAX_FILE_BYTES)} are skipped to keep the viewer responsive.`}
+            hint={`Files above ${formatBytes(MAX_FILE_BYTES)} are skipped to keep the viewer responsive. Open on GitHub instead.`}
           />
         ) : query.isPending ? (
           <SkeletonLines rows={12} />

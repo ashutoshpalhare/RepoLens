@@ -31,7 +31,13 @@ function Architecture() {
       isPending={graph.isPending}
       error={graph.error}
       onRetry={() => graph.refetch()}
-      onOpenFile={() => navigate({ to: "/r/$owner/$repo", params: { owner, repo } })}
+      onOpenFile={(path?: string) => {
+        void navigate({
+          to: "/r/$owner/$repo",
+          params: { owner, repo },
+          search: path ? { path } : {},
+        });
+      }}
     />
   );
 }

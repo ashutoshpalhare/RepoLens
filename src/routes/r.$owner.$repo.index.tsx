@@ -1,12 +1,17 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { CodeViewer } from "@/components/repolens/CodeViewer";
 import { FileExplorer } from "@/components/repolens/FileExplorer";
 import { InsightsPanel } from "@/components/repolens/InsightsPanel";
 import { useRepo } from "@/hooks/useRepoData";
+import { isSpecialTreeMode } from "@/lib/github";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/r/$owner/$repo/")({
+  validateSearch: (search: Record<string, unknown>) => {
+    const path = typeof search.path === "string" && search.path.length > 0 ? search.path : undefined;
+    return { path } as { path?: string };
+  },
   component: CodeWorkspace,
 });
 
@@ -15,32 +20,50 @@ type Pane = (typeof PANES)[number];
 
 function CodeWorkspace() {
   const { owner, repo } = Route.useParams();
+  const search = Route.useSearch();
+  const navigate = useNavigate();
   const { data } = useRepo({ owner, repo });
-  const [path, setPath] = useState<string | null>(null);
-  const [pane, setPane] = useState<Pane>("Files");
+  const [pane, setPane] = useState<Pane>(search.path ? "Code" : "Files");
 
-  const size = useMemo(
-    () => data?.entries.find((e) => e.path === path)?.size,
+  const path = search.path ?? null;
+
+  const entry = useMemo(
+    () => data?.entries.find((e) => e.path === path),
     [data?.entries, path],
   );
+  const size = entry?.size;
+  const special = isSpecialTreeMode(entry?.mode) || entry?.type === "commit";
 
   useEffect(() => {
     const onOpen = (event: Event) => {
       const detail = (event as CustomEvent<{ path?: string }>).detail;
       if (detail?.path) {
-        setPath(detail.path);
+        void navigate({
+          to: "/r/$owner/$repo",
+          params: { owner, repo },
+          search: { path: detail.path },
+          replace: false,
+        });
         setPane("Code");
       }
     };
     window.addEventListener("repolens:open-file", onOpen);
     return () => window.removeEventListener("repolens:open-file", onOpen);
-  }, []);
+  }, [navigate, owner, repo]);
+
+  useEffect(() => {
+    if (path) setPane("Code");
+  }, [path]);
 
   if (!data) return null;
   const branch = data.meta.default_branch;
 
   const select = (next: string) => {
-    setPath(next);
+    void navigate({
+      to: "/r/$owner/$repo",
+      params: { owner, repo },
+      search: { path: next },
+    });
     setPane("Code");
   };
 
@@ -91,6 +114,7 @@ function CodeWorkspace() {
             path={path}
             size={size ?? 0}
             blobUrlBase={`${data.meta.html_url}/blob/${branch}`}
+            specialMode={special ? (entry?.mode === "120000" ? "symlink" : "submodule") : null}
           />
         </div>
         <div

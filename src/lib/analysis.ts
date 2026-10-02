@@ -49,6 +49,7 @@ export function languageLabel(ext: string) {
   return LANG_LABELS[ext] ?? (ext ? ext.toUpperCase() : "No extension");
 }
 
+
 /** Build a nested file tree from the flat GitHub tree response. */
 export function buildFileTree(entries: TreeEntry[]): FileNode[] {
   const root: FileNode = { name: "", path: "", type: "dir", children: [] };
@@ -68,11 +69,85 @@ export function buildFileTree(entries: TreeEntry[]): FileNode[] {
   for (const entry of entries) {
     if (entry.type === "tree") {
       ensureDir(entry.path);
-    } else if (entry.type === "blob") {
-      const idx = entry.path.lastIndexOf("/");
-      const parent = ensureDir(idx === -1 ? "" : entry.path.slice(0, idx));
+      continue;
+    }
+
+    // blob, commit (submodule), or special modes
+    const idx = entry.path.lastIndexOf("/");
+    const parent = ensureDir(idx === -1 ? "" : entry.path.slice(0, idx));
+    const name = entry.path.slice(idx + 1);
+
+    // Git symlink (120000) and submodule (160000 / type commit)
+    if (entry.mode === "120000" || entry.mode === "160000" || entry.type === "commit") {
       parent.children!.push({
-        name: entry.path.slice(idx + 1),
+        name,
+        path: entry.path,
+        type: "file",
+        size: entry.size ?? 0,
+      });
+      continue;
+    }
+
+    if (entry.type === "blob") {
+      parent.children!.push({
+        name,
+        path: entry.path,
+        type: "file",
+        size: entry.size ?? 0,
+      });
+    }
+  }
+
+  const sort = (nodes: FileNode[]): FileNode[] => {
+    nodes.sort((a, b) =>
+      a.type === b.type ? a.name.localeCompare(b.name) : a.type === "dir" ? -1 : 1,
+    );
+    for (const node of nodes) if (node.children) sort(node.children);
+    return nodes;
+  };
+
+  return sort(root.children ?? []);
+}/** Build a nested file tree from the flat GitHub tree response. */
+export function buildFileTree(entries: TreeEntry[]): FileNode[] {
+  const root: FileNode = { name: "", path: "", type: "dir", children: [] };
+  const dirs = new Map<string, FileNode>([["", root]]);
+
+  const ensureDir = (path: string): FileNode => {
+    const existing = dirs.get(path);
+    if (existing) return existing;
+    const idx = path.lastIndexOf("/");
+    const parent = ensureDir(idx === -1 ? "" : path.slice(0, idx));
+    const node: FileNode = { name: path.slice(idx + 1), path, type: "dir", children: [] };
+    parent.children!.push(node);
+    dirs.set(path, node);
+    return node;
+  };
+
+  for (const entry of entries) {
+    if (entry.type === "tree") {
+      ensureDir(entry.path);
+      continue;
+    }
+
+    // blob, commit (submodule), or special modes
+    const idx = entry.path.lastIndexOf("/");
+    const parent = ensureDir(idx === -1 ? "" : entry.path.slice(0, idx));
+    const name = entry.path.slice(idx + 1);
+
+    // Git symlink (120000) and submodule (160000 / type commit)
+    if (entry.mode === "120000" || entry.mode === "160000" || entry.type === "commit") {
+      parent.children!.push({
+        name,
+        path: entry.path,
+        type: "file",
+        size: entry.size ?? 0,
+      });
+      continue;
+    }
+
+    if (entry.type === "blob") {
+      parent.children!.push({
+        name,
         path: entry.path,
         type: "file",
         size: entry.size ?? 0,
@@ -90,6 +165,9 @@ export function buildFileTree(entries: TreeEntry[]): FileNode[] {
 
   return sort(root.children ?? []);
 }
+
+
+
 
 const CONFIG_FILES = [
   "package.json","tsconfig.json","vite.config.ts","next.config.js","Dockerfile","docker-compose.yml",
