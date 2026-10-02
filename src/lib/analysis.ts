@@ -452,3 +452,72 @@ export async function copyText(text: string): Promise<boolean> {
     }
   }
 }
+
+/** Build a clipboard-ready context block for AI chat / PR review. */
+export function buildAiPrompt(input: {
+  meta: {
+    full_name: string;
+    description: string | null;
+    default_branch: string;
+    language: string | null;
+    license: { spdx_id?: string; name?: string } | null;
+    stargazers_count: number;
+    html_url: string;
+  };
+  insights: {
+    totalFiles: number;
+    totalFolders: number;
+    totalBytes: number;
+    languages: { label: string; files: number; bytes: number }[];
+    configFiles: string[];
+    topLevel: { path: string; files: number }[];
+  };
+  fileTree?: FileNode[];
+  treeDepth?: number;
+}): string {
+  const { meta, insights, fileTree, treeDepth = 3 } = input;
+  const langs = insights.languages
+    .slice(0, 8)
+    .map((l) => `${l.label} (${l.files} files)`)
+    .join(", ");
+  const top = insights.topLevel
+    .slice(0, 12)
+    .map((t) => `- ${t.path}/  (${t.files} files)`)
+    .join("\n");
+  const configs = insights.configFiles.slice(0, 20).join(", ") || "(none detected)";
+  const tree =
+    fileTree && fileTree.length
+      ? formatTreeAscii(fileTree, {
+          maxDepth: treeDepth,
+          rootName: meta.full_name.split("/")[1] ?? meta.full_name,
+        })
+      : "(tree unavailable)";
+
+  return [
+    `# Repository context: ${meta.full_name}`,
+    "",
+    `URL: ${meta.html_url}`,
+    `Description: ${meta.description || "(none)"}`,
+    `Default branch: ${meta.default_branch}`,
+    `Primary language: ${meta.language || "(unknown)"}`,
+    `License: ${meta.license?.spdx_id || meta.license?.name || "(none)"}`,
+    `Stars: ${meta.stargazers_count}`,
+    `Files: ${insights.totalFiles} · Folders: ${insights.totalFolders} · Tracked size: ${formatBytes(insights.totalBytes)}`,
+    "",
+    "## Languages / file types",
+    langs || "(none)",
+    "",
+    "## Top-level structure",
+    top || "(empty)",
+    "",
+    "## Config / tooling files",
+    configs,
+    "",
+    `## Directory tree (depth ${treeDepth})`,
+    "```",
+    tree,
+    "```",
+    "",
+    "Use this context when answering questions about the repository structure, stack, and layout.",
+  ].join("\n");
+}

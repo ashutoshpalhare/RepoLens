@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
-import { CircleDot, Copy, GitFork, Scale, Star } from "lucide-react";
+import { CircleDot, Copy, GitFork, Scale, Sparkles, Star } from "lucide-react";
 import { toast } from "sonner";
-import { copyText, formatBytes, formatTreeAscii } from "@/lib/analysis";
+import { buildAiPrompt, copyText, formatBytes, formatTreeAscii } from "@/lib/analysis";
 import { cn } from "@/lib/utils";
 import type { FileNode, RepoInsights, RepoMeta } from "@/types/repo";
 
@@ -111,9 +111,34 @@ export function InsightsPanel({
     else toast.error("Could not copy to clipboard");
   };
 
+  const onCopyAiPrompt = async () => {
+    const text = buildAiPrompt({
+      meta,
+      insights,
+      fileTree,
+      treeDepth: Math.min(depth, 4),
+    });
+    const ok = await copyText(text);
+    if (ok) toast.success("AI context prompt copied");
+    else toast.error("Could not copy to clipboard");
+  };
+
   return (
     <aside className="flex h-full min-h-0 flex-col overflow-y-auto" aria-label="Repository insights">
-      <Section title="Repository">
+      <Section
+        title="Repository"
+        action={
+          <button
+            type="button"
+            onClick={onCopyAiPrompt}
+            title="Copy meta + tree as AI prompt"
+            className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary"
+          >
+            <Sparkles className="size-3" />
+            AI prompt
+          </button>
+        }
+      >
         <p className="text-sm leading-relaxed text-foreground/90">
           {meta.description || "No description provided."}
         </p>
