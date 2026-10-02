@@ -1,6 +1,7 @@
 import { ArrowRight, Network } from "lucide-react";
 import { useMemo, useState } from "react";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "@/components/repolens/StateBlocks";
+import type { ArchProgress } from "@/hooks/useRepoData";
 import { cn } from "@/lib/utils";
 import type { DependencyGraph } from "@/types/repo";
 
@@ -10,13 +11,25 @@ interface Props {
   error: unknown;
   onRetry: () => void;
   onOpenFile: (path: string) => void;
+  progress?: ArchProgress;
+  percent?: number;
+  onCancel?: () => void;
 }
 
 const NODE_H = 26;
 const GAP = 10;
 const COL_W = 260;
 
-export function ArchitectureView({ graph, isPending, error, onRetry, onOpenFile }: Props) {
+export function ArchitectureView({
+  graph,
+  isPending,
+  error,
+  onRetry,
+  onOpenFile,
+  progress,
+  percent = 0,
+  onCancel,
+}: Props) {
   const [focus, setFocus] = useState<string | null>(null);
 
   const layout = useMemo(() => {
@@ -47,8 +60,7 @@ export function ArchitectureView({ graph, isPending, error, onRetry, onOpenFile 
       });
     }
 
-    const height =
-      72 + Math.max(...cols.map((c) => c.mods.length), 1) * (NODE_H + GAP);
+    const height = 72 + Math.max(...cols.map((c) => c.mods.length), 1) * (NODE_H + GAP);
     const width = cols.length * COL_W + 32;
     const edges = graph.edges.filter((e) => pos.has(e.from) && pos.has(e.to));
 
@@ -56,9 +68,60 @@ export function ArchitectureView({ graph, isPending, error, onRetry, onOpenFile 
   }, [graph]);
 
   if (isPending) {
-    return <LoadingBlock label="Scanning source files for import relationships…" />;
+    const phaseLabel =
+      progress?.phase === "analyzing"
+        ? "Building dependency graph…"
+        : progress?.phase === "fetching"
+          ? `Fetching sources ${progress.done}/${progress.total || "…"}`
+          : "Scanning source files for import relationships…";
+
+    return (
+      <div className="flex h-full min-h-0 flex-col items-center justify-center gap-4 px-6">
+        <LoadingBlock label={phaseLabel} className="min-h-0 flex-none" />
+        <div className="w-full max-w-sm space-y-2">
+          <div className="h-2 overflow-hidden rounded-full bg-surface-2">
+            <div
+              className="h-full rounded-full bg-primary transition-all duration-300"
+              style={{ width: `${Math.max(percent, progress?.phase === "analyzing" ? 95 : 0)}%` }}
+            />
+          </div>
+          <div className="flex items-center justify-between font-mono text-[11px] text-muted-foreground">
+            <span>
+              {progress?.phase === "analyzing" ? "Analyzing…" : `${percent}%`}
+            </span>
+            {onCancel && (
+              <button
+                type="button"
+                onClick={onCancel}
+                className="rounded border border-border px-2 py-0.5 text-foreground transition-colors hover:border-destructive/50 hover:text-destructive"
+              >
+                Cancel
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
   }
-  if (error) return <ErrorBlock error={error} onRetry={onRetry} />;
+
+  if (error) {
+    const cancelled =
+      error instanceof DOMException && error.name === "AbortError"
+        ? true
+        : error instanceof Error && /cancel/i.test(error.message);
+
+    if (cancelled) {
+      return (
+        <EmptyBlock
+          icon={Network}
+          title="Scan cancelled"
+          hint="Architecture analysis was stopped before it finished. Retry when you want a full module map."
+        />
+      );
+    }
+    return <ErrorBlock error={error} onRetry={onRetry} />;
+  }
+
   if (!graph || !layout || graph.modules.length === 0) {
     return (
       <EmptyBlock
@@ -207,6 +270,7 @@ export function ArchitectureView({ graph, isPending, error, onRetry, onOpenFile 
               >
                 <td className="px-5 py-1.5">
                   <button
+                    type="button"
                     onClick={() => onOpenFile(mod.path)}
                     className="flex items-center gap-1.5 text-foreground/85 transition-colors hover:text-primary"
                   >

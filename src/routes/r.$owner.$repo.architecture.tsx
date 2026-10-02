@@ -28,14 +28,17 @@ function Architecture() {
   return (
     <ArchitectureView
       graph={graph.data}
-      isPending={graph.isPending}
+      isPending={graph.isPending || graph.isFetching}
       error={graph.error}
       onRetry={() => graph.refetch()}
-      onOpenFile={(path?: string) => {
+      onCancel={() => graph.cancel()}
+      progress={graph.progress}
+      percent={graph.percent}
+      onOpenFile={(path: string) => {
         void navigate({
           to: "/r/$owner/$repo",
           params: { owner, repo },
-          search: path ? { path } : {},
+          search: { path },
         });
       }}
     />

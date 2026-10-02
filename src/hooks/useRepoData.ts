@@ -1,4 +1,5 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCallback, useState } from "react";
 import {
   buildDependencyGraph,
   buildFileTree,
@@ -9,7 +10,7 @@ import { fetchFileContent, fetchRepoMeta, fetchRepoTree } from "@/lib/github";
 import type { DepsWorkerRequest, DepsWorkerResponse } from "@/lib/deps.worker";
 import type { DependencyGraph, RepoRef } from "@/types/repo";
 
-function runInWorker(payload: DepsWorkerRequest) {
+function runInWorker(payload: DepsWorkerRequest, signal?: AbortSignal) {
   return new Promise<DependencyGraph>((resolve, reject) => {
     const worker = new Worker(new URL("../lib/deps.worker.ts", import.meta.url), {
       type: "module",
@@ -18,11 +19,19 @@ function runInWorker(payload: DepsWorkerRequest) {
       worker.terminate();
       fn();
     };
+    const onAbort = () => {
+      done(() => reject(new DOMException("Architecture scan cancelled", "AbortError")));
+    };
+    if (signal) {
+      if (signal.aborted) {
+        onAbort();
+        return;
+      }
+      signal.addEventListener("abort", onAbort, { once: true });
+    }
     worker.onmessage = (event: MessageEvent<DepsWorkerResponse>) => {
       const data = event.data;
-      done(() =>
-        data.ok ? resolve(data.graph) : reject(new Error(data.message)),
-      );
+      done(() => (data.ok ? resolve(data.graph) : reject(new Error(data.message))));
     };
     worker.onerror = () => done(() => reject(new Error("Analysis worker failed")));
     worker.postMessage(payload);
@@ -62,50 +71,114 @@ export function useFileContent(ref: RepoRef, branch: string | undefined, path: s
   });
 }
 
+export type ArchProgress = {
+  done: number;
+  total: number;
+  phase: "idle" | "fetching" | "analyzing" | "done";
+};
+
 export function useDependencyGraph(
   ref: RepoRef,
   branch: string | undefined,
   entries: { path: string; type: string; size?: number }[] | undefined,
 ) {
-  return useQuery({
-    queryKey: ["deps", ref.owner, ref.repo, branch],
+  const queryClient = useQueryClient();
+  const [progress, setProgress] = useState<ArchProgress>({
+    done: 0,
+    total: 0,
+    phase: "idle",
+  });
+
+  const queryKey = ["deps", ref.owner, ref.repo, branch] as const;
+
+  const query = useQuery({
+    queryKey,
     enabled: !!branch && !!entries?.length,
     staleTime: 10 * 60_000,
     retry: false,
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const all = entries as Parameters<typeof pickSourceFilesForAnalysis>[0];
       const candidates = pickSourceFilesForAnalysis(all);
       const allPaths = all.filter((e) => e.type === "blob").map((e) => e.path);
+      const total = candidates.length;
+
+      setProgress({ done: 0, total, phase: "fetching" });
 
       const scanned: { path: string; content: string }[] = [];
       let skipped = 0;
       const concurrency = 6;
       let cursor = 0;
+      let finished = 0;
+
+      const bump = () => {
+        finished += 1;
+        setProgress({ done: finished, total, phase: "fetching" });
+      };
 
       const worker = async () => {
         while (cursor < candidates.length) {
+          if (signal.aborted) {
+            throw new DOMException("Architecture scan cancelled", "AbortError");
+          }
           const item = candidates[cursor++]!;
           try {
             const content = await fetchFileContent(ref, branch!, item.path);
+            if (signal.aborted) {
+              throw new DOMException("Architecture scan cancelled", "AbortError");
+            }
             scanned.push({ path: item.path, content });
-          } catch {
+          } catch (err) {
+            if (err instanceof DOMException && err.name === "AbortError") throw err;
             skipped += 1;
+          } finally {
+            bump();
           }
         }
       };
 
       await Promise.all(Array.from({ length: concurrency }, worker));
+
+      if (signal.aborted) {
+        throw new DOMException("Architecture scan cancelled", "AbortError");
+      }
+
+      setProgress({ done: total, total, phase: "analyzing" });
+
       const sizeEntries: [string, number][] = [];
       for (const e of all) if (e.type === "blob") sizeEntries.push([e.path, e.size ?? 0]);
 
+      let graph: DependencyGraph;
       if (typeof window !== "undefined" && typeof Worker !== "undefined") {
         try {
-          return await runInWorker({ allPaths, scanned, skipped, sizes: sizeEntries });
-        } catch {
-          // fall through to synchronous analysis
+          graph = await runInWorker(
+            { allPaths, scanned, skipped, sizes: sizeEntries },
+            signal,
+          );
+        } catch (err) {
+          if (err instanceof DOMException && err.name === "AbortError") throw err;
+          graph = buildDependencyGraph(allPaths, scanned, skipped, new Map(sizeEntries));
         }
+      } else {
+        graph = buildDependencyGraph(allPaths, scanned, skipped, new Map(sizeEntries));
       }
-      return buildDependencyGraph(allPaths, scanned, skipped, new Map(sizeEntries));
+
+      setProgress({ done: total, total, phase: "done" });
+      return graph;
     },
   });
+
+  const cancel = useCallback(() => {
+    void queryClient.cancelQueries({ queryKey });
+    setProgress((p) => ({ ...p, phase: "idle" }));
+  }, [queryClient, queryKey]);
+
+  const percent =
+    progress.total > 0 ? Math.min(100, Math.round((progress.done / progress.total) * 100)) : 0;
+
+  return {
+    ...query,
+    progress,
+    percent,
+    cancel,
+  };
 }
