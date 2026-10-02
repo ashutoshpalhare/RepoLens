@@ -1,6 +1,5 @@
 import { KeyRound, ShieldCheck, Trash2, X } from "lucide-react";
 import { useEffect, useState } from "react";
-import { clearFileContentCache, getStoredGitHubToken, setStoredGitHubToken } from "@/lib/github";
 import { toast } from "sonner";
 import {
   getStoredGitHubToken,
