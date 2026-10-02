@@ -1,3 +1,4 @@
+import { getCachedFileContent, setCachedFileContent } from "@/lib/file-cache";
 import {
   GitHubError,
   type RateLimitState,
@@ -206,7 +207,11 @@ export function isSpecialTreeMode(mode?: string) {
 }
 
 /** Fetch raw text content for a blob. */
+/** Fetch raw text content for a blob (IndexedDB cache when available). */
 export async function fetchFileContent(ref: RepoRef, branch: string, path: string) {
+  const cached = await getCachedFileContent(ref.owner, ref.repo, branch, path);
+  if (cached !== null) return cached;
+
   const url = `https://raw.githubusercontent.com/${ref.owner}/${ref.repo}/${encodeURIComponent(branch)}/${path
     .split("/")
     .map(encodeURIComponent)
@@ -219,8 +224,13 @@ export async function fetchFileContent(ref: RepoRef, branch: string, path: strin
   }
   if (res.status === 404) throw new GitHubError("File not found on this branch.", "not_found", 404);
   if (!res.ok) throw new GitHubError(`Could not load file (${res.status}).`, "unknown", res.status);
-  return res.text();
+  const text = await res.text();
+  void setCachedFileContent(ref.owner, ref.repo, branch, path, text);
+  return text;
 }
+
+export { clearFileContentCache } from "@/lib/file-cache";
+
 
 /* ---------------------------------------------------------- open-in helpers */
 

@@ -1,5 +1,6 @@
 import { KeyRound, ShieldCheck, Trash2, X } from "lucide-react";
 import { useEffect, useState } from "react";
+import { clearFileContentCache, getStoredGitHubToken, setStoredGitHubToken } from "@/lib/github";
 import { toast } from "sonner";
 import {
   getStoredGitHubToken,
@@ -48,11 +49,12 @@ export function SettingsModal({
     onClose();
   };
 
-  const clear = () => {
+    const clear = () => {
     setStoredGitHubToken(null);
+    void clearFileContentCache();
     setToken("");
     setHasToken(false);
-    toast.success("Token removed from this browser.");
+    toast.success("Token and cached file contents removed from this browser.");
     onCredentialChange?.();
   };
 
