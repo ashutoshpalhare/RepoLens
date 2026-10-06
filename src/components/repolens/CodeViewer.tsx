@@ -82,11 +82,14 @@ export function CodeViewer({
 
   return (
     <section className="flex h-full min-h-0 flex-col bg-background" aria-label="Code viewer">
-      <header className="flex h-10 shrink-0 items-center gap-2 border-b border-border bg-surface px-3">
+      <header className="flex h-11 shrink-0 items-center gap-2 border-b border-border bg-surface/90 px-3 shadow-[0_1px_0_hsl(var(--border)/0.5)] backdrop-blur">
         {path ? (
           <>
             <FileTypeIcon path={path} />
-            <span className="truncate font-mono text-xs text-foreground">{path}</span>
+            <div className="min-w-0 flex-1 truncate font-mono text-xs text-foreground">
+              <span className="text-muted-foreground">{path.split("/").slice(0, -1).join("/")}/</span>
+              <span className="font-medium">{path.split("/").at(-1)}</span>
+            </div>
             {!!size && !specialMode && (
               <span className="shrink-0 rounded border border-border bg-surface-2 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
                 {formatBytes(size)}
@@ -97,12 +100,12 @@ export function CodeViewer({
                 {specialMode}
               </span>
             )}
-            <div className="ml-auto flex shrink-0 items-center gap-3">
+            <div className="ml-auto flex shrink-0 items-center gap-1.5">
               {!!query.data && (
                 <button
                   type="button"
                   onClick={copy}
-                  className="flex items-center gap-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground transition-colors hover:text-primary"
+                  className="inline-flex items-center gap-1 rounded-md border border-transparent px-2 py-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground transition-colors hover:border-border hover:bg-surface-2 hover:text-foreground"
                 >
                   {copied ? (
                     <>
@@ -173,7 +176,7 @@ export function CodeViewer({
         ) : (
           <Highlight theme={themes.vsDark} code={query.data.replace(/\n$/, "")} language={language}>
             {({ tokens, getLineProps, getTokenProps }) => (
-              <pre className="animate-fade-up min-w-full bg-transparent py-3 font-mono text-[12.5px] leading-[1.65]">
+              <pre className="animate-fade-up min-w-full bg-transparent py-4 font-mono text-[12.5px] leading-[1.7]">
                 <code>
                   {tokens.map((line, i) => {
                     const lineProps = getLineProps({ line });
@@ -181,16 +184,16 @@ export function CodeViewer({
                       <div
                         key={i}
                         {...lineProps}
-                        className="group flex hover:bg-surface/60"
+                        className="group flex border-l-2 border-transparent hover:border-primary/30 hover:bg-surface/60"
                         style={{ ...lineProps.style, background: "transparent" }}
                       >
                         <span
                           aria-hidden
-                          className="sticky left-0 w-14 shrink-0 select-none bg-background pr-4 text-right text-muted-foreground/60 group-hover:text-muted-foreground"
+                          className="sticky left-0 w-14 shrink-0 select-none bg-background/95 pr-4 text-right text-muted-foreground/45 group-hover:text-muted-foreground"
                         >
                           {i + 1}
                         </span>
-                        <span className="whitespace-pre pr-6">
+                        <span className="whitespace-pre pr-8 text-foreground/90">
                           {line.map((token, key) => {
                             const props = getTokenProps({ token });
                             return <span key={key} {...props} />;
