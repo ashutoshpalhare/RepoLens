@@ -65,7 +65,7 @@ export function FileExplorer({ tree, activePath, onSelect, rootName }: Props) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex items-center gap-2 border-b border-border px-3 py-2.5">
+      <div className="flex items-center gap-2 border-b border-border bg-surface/60 px-3 py-2.5">
         <Search aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
         <input
           value={query}
@@ -86,7 +86,7 @@ export function FileExplorer({ tree, activePath, onSelect, rootName }: Props) {
         )}
       </div>
 
-      <div className="flex items-center gap-1 border-b border-border px-2 py-1">
+      <div className="flex items-center gap-1 border-b border-border bg-background/40 px-2 py-1.5">
         <button
           type="button"
           onClick={expandAll}
@@ -112,7 +112,7 @@ export function FileExplorer({ tree, activePath, onSelect, rootName }: Props) {
         </button>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto py-1.5">
+      <div className="min-h-0 flex-1 overflow-y-auto py-2">
         {results ? (
           results.length === 0 ? (
             <EmptyBlock title="No files match" hint={`Nothing in this repository matches “${query}”.`} />
@@ -169,7 +169,7 @@ function Tree({
             <button
               type="button"
               onClick={() => toggle(node.path)}
-              className="group flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left transition-colors hover:bg-accent/70"
+              className="group flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-accent/70"
               style={{ paddingLeft: 8 + depth * 12 }}
             >
               <ChevronRight
@@ -236,8 +236,8 @@ function FileRow({
       aria-current={active ? "true" : undefined}
       title={node.path}
       className={cn(
-        "group flex w-full items-center gap-1.5 rounded-md py-1 pr-2 text-left transition-colors",
-        active ? "bg-primary/15 text-foreground" : "hover:bg-accent/70",
+        "group flex w-full items-center gap-1.5 rounded-md py-1.5 pr-2 text-left transition-colors",
+        active ? "bg-primary/12 text-foreground ring-1 ring-inset ring-primary/20" : "hover:bg-accent/70",
       )}
       style={{ paddingLeft: 22 + depth * 12 }}
     >
