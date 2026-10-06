@@ -1,5 +1,5 @@
 import { Link, Outlet, createFileRoute, useNavigate } from "@tanstack/react-router";
-import { Moon, ScanSearch, Settings2, Sun } from "lucide-react";
+import { Command, GitBranch, Moon, ScanSearch, Settings2, Sun } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { GitHubStatus } from "@/components/repolens/GitHubStatus";
 import { OpenInMenu } from "@/components/repolens/OpenInMenu";
@@ -110,8 +110,8 @@ function Workspace() {
   const branch = query.data?.meta.default_branch ?? "main";
 
   return (
-    <div className="flex h-screen min-h-0 flex-col bg-background">
-      <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border bg-surface px-3 sm:gap-3 sm:px-4">
+    <div className="flex h-screen min-h-0 flex-col bg-background grid-noise">
+      <header className="relative z-20 flex h-14 shrink-0 items-center gap-2 border-b border-border bg-surface/95 px-3 shadow-[0_1px_0_hsl(var(--primary)/0.03)] backdrop-blur sm:gap-3 sm:px-4">
         <Link
           to="/"
           className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground transition-colors hover:text-foreground"
@@ -121,6 +121,10 @@ function Workspace() {
         </Link>
 
         <span aria-hidden className="hidden h-5 w-px bg-border sm:block" />
+
+        <div className="hidden items-center gap-1.5 rounded-md border border-border bg-background/50 px-2 py-1 font-mono text-[9px] uppercase tracking-wider text-muted-foreground lg:flex">
+          <GitBranch aria-hidden className="size-3 text-primary" /> {branch}
+        </div>
 
         <h1 className="min-w-0 truncate font-mono text-sm text-foreground">
           {owner}/<span className="font-semibold">{repo}</span>
@@ -135,7 +139,7 @@ function Workspace() {
           />
         )}
 
-        <nav aria-label="Workspace views" className="ml-auto flex items-center gap-1">
+        <nav aria-label="Workspace views" className="ml-auto flex items-center gap-1.5">
           {TABS.map((t) => (
             <Link
               key={t.label}
@@ -144,7 +148,7 @@ function Workspace() {
               activeOptions={{ exact: t.exact }}
               activeProps={{ className: "bg-surface-2 text-foreground" }}
               inactiveProps={{ className: "text-muted-foreground hover:text-foreground" }}
-              className="rounded-md px-2 py-1.5 text-xs transition-colors sm:px-3 sm:text-sm"
+              className="relative rounded-md border border-transparent px-2.5 py-1.5 text-xs font-medium transition-all hover:border-border hover:bg-background/50 sm:px-3 sm:text-sm"
             >
               {t.label}
             </Link>
@@ -199,7 +203,7 @@ function Workspace() {
         </nav>
       </header>
 
-      <div className="min-h-0 flex-1">
+      <div className="relative min-h-0 flex-1 overflow-hidden">
         {query.isPending ? (
           <LoadingBlock label={`Loading ${owner}/${repo}…`} className="h-full" />
         ) : query.isError ? (
