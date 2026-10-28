@@ -38,7 +38,13 @@ export function parseGitHubInput(raw: string): ParsedTarget | null {
   rest = rest.split(/[?#]/)[0].replace(/^\/+/, "");
   if (!rest) return null;
 
-  const segments = rest.split("/").filter(Boolean).map(decodeURIComponent);
+  // Malformed percent-encoding must be treated as invalid input, not crash the UI.
+  let segments: string[];
+  try {
+    segments = rest.split("/").filter(Boolean).map(decodeURIComponent);
+  } catch {
+    return null;
+  }
   if (segments.length < 2) return null;
 
   const owner = segments[0];

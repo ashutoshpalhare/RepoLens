@@ -48,15 +48,31 @@ npm run dev
 ```bash
 npm run typecheck
 npm run build
+npm run smoke
 npm run preview
 ```
 
-The production build uses `vite-plugin-singlefile` to inline the JavaScript and CSS into the generated HTML, keeping static hosting simple. The Vite base path is configured for the GitHub Pages project site at `/RepoLens/`.
+The production smoke check verifies generated HTML, single-file output, the GitHub Pages base path, route registration, and official GitHub API hosts. It checks the build artifact/configuration; it is not a replacement for testing interactive behavior in a browser.
 
-## GitHub Pages
+The production build uses `vite-plugin-singlefile` to inline JavaScript and CSS into the generated HTML, keeping static hosting simple. The Vite base path is configured for the GitHub Pages project site at `/RepoLens/`.
 
-The site is intended for GitHub Pages. Hash-based client-side routing avoids the need for server-side route rewrites. The CI workflow checks dependency installation, TypeScript and the production build. Deployment workflow configuration should be validated against the repository's active default-branch workflow before merging.
+## Continuous integration and deployment
+
+- **CI** runs on pushes and pull requests: `npm ci`, TypeScript validation, production build, and production smoke checks.
+- **GitHub Pages deployment** runs on pushes to `main` and supports manual dispatch. It builds, validates, uploads the `dist/` artifact, and deploys it with the official Pages actions.
+- Both workflows use Node.js 22 and the committed npm lockfile.
+
+If deployment is blocked, verify **Settings → Pages → Build and deployment → Source → GitHub Actions**.
+
+## Day 1 closeout
+
+The SPA migration, project-site base path, app entry point, hash-based routes, shared app/theme shell, responsive navigation, loading/error states, README, ignore rules, CI, and automated Pages deployment are in place. See [the Day 1 checklist](docs/day-1-closeout.md) for the audited scope and the remaining manual browser verification.
+
+## Contributing and issues
+
+- [Report a bug or request a feature](https://github.com/ashutoshpalhare/RepoLens/issues)
+- [Contributing guide](https://github.com/ashutoshpalhare/RepoLens/blob/main/CONTRIBUTING.md)
 
 ## Project status
 
-This branch contains the Opus V3 SPA migration candidate. Build and typecheck results must be taken from a successful CI run; they are not assumed from source inspection alone.
+The Vite SPA is the active application on `main`. CI and the GitHub Pages deployment workflow completed successfully on the migration/deployment baseline. Interactive browser verification must still be performed after deployment and whenever user-facing behavior changes.

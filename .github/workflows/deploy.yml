@@ -41,10 +41,8 @@ jobs:
       - name: Build production site
         run: npm run build
 
-      - name: Verify generated site
-        run: |
-          test -s dist/index.html
-          grep -q 'RepoLens' dist/index.html
+      - name: Verify production artifact
+        run: npm run smoke
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
