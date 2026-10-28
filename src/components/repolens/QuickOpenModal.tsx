@@ -1,60 +1,50 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { FileCode2, Search, X } from "lucide-react";
-import { FileTypeIcon } from "@/components/repolens/FileTypeIcon";
-import { fuzzyFilter } from "@/lib/fuzzy";
-import { cn } from "@/lib/utils";
+import { Search } from "lucide-react";
+import { Modal } from "@/components/ui/Modal";
+import { Kbd, Skeleton } from "@/components/ui/primitives";
+import { FileTypeIcon } from "./FileIcon";
+import { markIndices, rankFuzzy } from "@/lib/fuzzy";
+import { cn } from "@/utils/cn";
 
-export function QuickOpenModal({
-  open,
-  onClose,
-  paths,
-  onSelect,
-}: {
+export type QuickOpenProps = {
   open: boolean;
   onClose: () => void;
   paths: string[];
+  loading?: boolean;
   onSelect: (path: string) => void;
-}) {
+};
+
+/** Fuzzy file finder (Ctrl/Cmd + P). */
+export function QuickOpenModal({ open, onClose, paths, loading, onSelect }: QuickOpenProps) {
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
 
-  const results = useMemo(
-    () => fuzzyFilter(paths, query, (p) => p, 80),
-    [paths, query],
-  );
-
   useEffect(() => {
-    if (!open) return;
-    setQuery("");
-    setActive(0);
-    const id = window.setTimeout(() => inputRef.current?.focus(), 20);
-    return () => window.clearTimeout(id);
+    if (open) {
+      setQuery("");
+      setActive(0);
+      window.setTimeout(() => inputRef.current?.focus(), 40);
+    }
   }, [open]);
+
+  const results = useMemo(
+    () =>
+      query.trim()
+        ? rankFuzzy(query.trim(), paths, (p) => p, 50)
+        : paths.slice(0, 50).map((item) => ({ item, score: 0, indices: [] as number[] })),
+    [query, paths],
+  );
 
   useEffect(() => {
     setActive(0);
   }, [query]);
 
   useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        onClose();
-      }
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
-
-  useEffect(() => {
-    const el = listRef.current?.querySelector<HTMLElement>(`[data-idx="${active}"]`);
-    el?.scrollIntoView({ block: "nearest" });
+    const node = listRef.current?.children[active] as HTMLElement | undefined;
+    node?.scrollIntoView({ block: "nearest" });
   }, [active]);
-
-  if (!open) return null;
 
   const choose = (path: string) => {
     onSelect(path);
@@ -62,83 +52,100 @@ export function QuickOpenModal({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-background/70 px-4 pt-[12vh] backdrop-blur-sm"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Quick open file"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div className="w-full max-w-xl overflow-hidden rounded-xl border border-border bg-surface shadow-xl">
-        <div className="flex items-center gap-2 border-b border-border px-3 py-2.5">
-          <Search className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-          <input
-            ref={inputRef}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "ArrowDown") {
-                e.preventDefault();
-                setActive((i) => Math.min(i + 1, Math.max(results.length - 1, 0)));
-              } else if (e.key === "ArrowUp") {
-                e.preventDefault();
-                setActive((i) => Math.max(i - 1, 0));
-              } else if (e.key === "Enter") {
-                e.preventDefault();
-                const hit = results[active];
-                if (hit) choose(hit);
-              }
-            }}
-            placeholder="Type a file path…"
-            aria-label="Filter files"
-            className="min-w-0 flex-1 bg-transparent font-mono text-sm text-foreground outline-none placeholder:text-muted-foreground"
-          />
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="rounded p-1 text-muted-foreground hover:text-foreground"
-          >
-            <X className="size-4" />
-          </button>
-        </div>
+    <Modal open={open} onClose={onClose} title="Quick open" bare align="top" className="max-w-xl">
+      <div className="flex items-center gap-2.5 border-b border-line px-3.5 py-3">
+        <Search className="h-4 w-4 shrink-0 text-faint" aria-hidden="true" />
+        <input
+          ref={inputRef}
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "ArrowDown") {
+              event.preventDefault();
+              setActive((i) => Math.min(i + 1, results.length - 1));
+            } else if (event.key === "ArrowUp") {
+              event.preventDefault();
+              setActive((i) => Math.max(i - 1, 0));
+            } else if (event.key === "Enter" && results[active]) {
+              event.preventDefault();
+              choose(results[active]!.item);
+            }
+          }}
+          aria-label="Search files by name"
+          placeholder="Start typing a file name…"
+          autoComplete="off"
+          spellCheck={false}
+          className="w-full bg-transparent text-sm text-ink placeholder:text-faint focus:outline-none"
+        />
+        <span className="shrink-0 font-mono text-[10px] text-faint">
+          {loading ? "indexing…" : `${paths.length} files`}
+        </span>
+      </div>
 
-        <ul ref={listRef} className="max-h-[50vh] overflow-y-auto py-1" role="listbox">
-          {results.length === 0 ? (
-            <li className="px-4 py-8 text-center text-sm text-muted-foreground">
-              No files match “{query}”.
-            </li>
-          ) : (
-            results.map((path, idx) => (
-              <li key={path} role="option" aria-selected={idx === active} data-idx={idx}>
+      <ul
+        ref={listRef}
+        role="listbox"
+        aria-label="Matching files"
+        className="rl-scroll max-h-[52vh] overflow-y-auto p-1.5"
+      >
+        {loading ? (
+          <li className="space-y-2 p-2">
+            <Skeleton className="h-7 w-3/4" />
+            <Skeleton className="h-7 w-2/3" />
+            <Skeleton className="h-7 w-1/2" />
+          </li>
+        ) : results.length === 0 ? (
+          <li className="px-3 py-8 text-center text-xs text-muted">
+            No file matches “{query}”.
+          </li>
+        ) : (
+          results.map((result, index) => {
+            const path = result.item;
+            const name = path.split("/").pop() ?? path;
+            const dir = path.split("/").slice(0, -1).join("/");
+            const nameParts = markIndices(name, result.indices);
+            return (
+              <li key={path} role="option" aria-selected={index === active}>
                 <button
                   type="button"
+                  onMouseEnter={() => setActive(index)}
                   onClick={() => choose(path)}
-                  onMouseEnter={() => setActive(idx)}
                   className={cn(
-                    "flex w-full items-center gap-2 px-3 py-2 text-left font-mono text-xs transition-colors",
-                    idx === active ? "bg-primary/15 text-foreground" : "text-foreground/85 hover:bg-accent/70",
+                    "flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors duration-150",
+                    index === active ? "bg-accent-soft" : "hover:bg-surface-2",
                   )}
                 >
                   <FileTypeIcon path={path} />
-                  <span className="min-w-0 truncate">{path}</span>
-                  {idx === active && (
-                    <FileCode2 className="ml-auto size-3.5 shrink-0 text-primary" aria-hidden />
-                  )}
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-mono text-xs text-ink">
+                      {nameParts.map((part, i) => (
+                        <span
+                          key={i}
+                          className={part.hit ? "text-accent" : undefined}
+                        >
+                          {part.text}
+                        </span>
+                      ))}
+                    </span>
+                    {dir ? (
+                      <span className="block truncate font-mono text-[10px] text-faint">
+                        {dir}
+                      </span>
+                    ) : null}
+                  </span>
+                  {index === active ? <Kbd>↵</Kbd> : null}
                 </button>
               </li>
-            ))
-          )}
-        </ul>
+            );
+          })
+        )}
+      </ul>
 
-        <div className="flex gap-3 border-t border-border px-3 py-2 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-          <span>↑↓ navigate</span>
-          <span>↵ open</span>
-          <span>esc close</span>
-        </div>
-      </div>
-    </div>
+      <footer className="flex items-center gap-3 border-t border-line px-3.5 py-2 text-[11px] text-faint">
+        <span className="flex items-center gap-1"><Kbd>↑</Kbd><Kbd>↓</Kbd> navigate</span>
+        <span className="flex items-center gap-1"><Kbd>↵</Kbd> open</span>
+        <span className="flex items-center gap-1"><Kbd>esc</Kbd> close</span>
+      </footer>
+    </Modal>
   );
 }

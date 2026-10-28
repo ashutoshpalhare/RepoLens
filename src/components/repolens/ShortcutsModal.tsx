@@ -1,73 +1,49 @@
-import { useEffect } from "react";
-import { X } from "lucide-react";
+import { Modal } from "@/components/ui/Modal";
+import { Kbd } from "@/components/ui/primitives";
 
-const ROWS: { keys: string; action: string }[] = [
-  { keys: "Ctrl/⌘ P", action: "Quick open file" },
-  { keys: "Ctrl/⌘ B", action: "Focus files filter (Code tab)" },
-  { keys: ".", action: "Open repo in github.dev" },
-  { keys: "?", action: "Show this shortcuts help" },
-  { keys: "Esc", action: "Close modal / dialog" },
+export type Shortcut = { keys: string[]; action: string; note?: string };
+
+export const SHORTCUTS: Shortcut[] = [
+  { keys: ["Ctrl/Cmd", "P"], action: "Quick open a file (fuzzy)", note: "Search every path in the repo" },
+  { keys: ["Ctrl/Cmd", "Shift", "F"], action: "Focus the explorer filter" },
+  { keys: ["Ctrl/Cmd", "B"], action: "Toggle the file explorer" },
+  { keys: ["Ctrl/Cmd", "\\"], action: "Toggle the insights panel" },
+  { keys: ["."], action: "Open the repo in github.dev" },
+  { keys: ["c"], action: "Copy the directory tree" },
+  { keys: ["y"], action: "Copy the current file path / permalink" },
+  { keys: ["?"], action: "Show this help" },
+  { keys: ["Esc"], action: "Close dialogs" },
 ];
 
-export function ShortcutsModal({
-  open,
-  onClose,
-}: {
-  open: boolean;
-  onClose: () => void;
-}) {
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        onClose();
-      }
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
-
-  if (!open) return null;
-
+export function ShortcutsModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-background/70 p-4 backdrop-blur-sm"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="shortcuts-title"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Keyboard shortcuts"
+      description="Single-key shortcuts are ignored while you are typing in a field."
+      className="max-w-lg"
     >
-      <div className="w-full max-w-md rounded-xl border border-border bg-surface shadow-lg">
-        <div className="flex items-center justify-between border-b border-border px-4 py-3">
-          <h2 id="shortcuts-title" className="text-sm font-semibold text-foreground">
-            Keyboard shortcuts
-          </h2>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+      <ul className="rl-scroll max-h-[60vh] divide-y divide-line overflow-y-auto">
+        {SHORTCUTS.map((shortcut) => (
+          <li
+            key={shortcut.action}
+            className="flex items-center justify-between gap-4 px-4 py-2.5"
           >
-            <X className="size-4" />
-          </button>
-        </div>
-        <ul className="divide-y divide-border px-2 py-1">
-          {ROWS.map((row) => (
-            <li key={row.keys} className="flex items-center justify-between gap-4 px-2 py-2.5">
-              <span className="text-sm text-foreground/90">{row.action}</span>
-              <kbd className="shrink-0 rounded border border-border bg-surface-2 px-2 py-0.5 font-mono text-[11px] text-muted-foreground">
-                {row.keys}
-              </kbd>
-            </li>
-          ))}
-        </ul>
-        <p className="border-t border-border px-4 py-3 text-xs text-muted-foreground">
-          Shortcuts are ignored while typing in an input or textarea.
-        </p>
-      </div>
-    </div>
+            <span className="min-w-0">
+              <span className="block text-sm text-ink">{shortcut.action}</span>
+              {shortcut.note ? (
+                <span className="mt-0.5 block text-[11px] text-faint">{shortcut.note}</span>
+              ) : null}
+            </span>
+            <span className="flex shrink-0 items-center gap-1">
+              {shortcut.keys.map((key) => (
+                <Kbd key={key}>{key}</Kbd>
+              ))}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </Modal>
   );
 }

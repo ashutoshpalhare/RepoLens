@@ -1,260 +1,283 @@
-import { useMemo, useState } from "react";
-import { CircleDot, Copy, GitFork, Scale, Sparkles, Star } from "lucide-react";
-import { toast } from "sonner";
-import { buildAiPrompt, copyText, formatBytes, formatTreeAscii } from "@/lib/analysis";
-import { cn } from "@/lib/utils";
-import type { FileNode, RepoInsights, RepoMeta } from "@/types/repo";
+import { motion } from "framer-motion";
+import {
+  Boxes,
+  FileStack,
+  Files,
+  FlaskConical,
+  FolderTree,
+  Gauge,
+  GitBranch,
+  HardDrive,
+  Layers,
+  Package,
+  Star,
+} from "lucide-react";
+import {
+  formatBytes,
+  formatCount,
+  formatRelative,
+  formatTreeAscii,
+  type RepoInsights,
+  type TreeNode,
+} from "@/lib/analysis";
+import type { RepoMeta } from "@/lib/github";
+import { cn } from "@/utils/cn";
+import { Bar, Badge, SectionHeading, StatTile } from "@/components/ui/primitives";
+import { Skeleton } from "@/components/ui/primitives";
+import { EASE_OUT, stagger } from "@/lib/motion";
+import { CopyTreeMenu } from "./CopyTreeMenu";
+import { ErrorState } from "./StateBlocks";
 
-export function Stat({
-  label,
-  value,
-  hint,
-  className,
-}: {
-  label: string;
-  value: string | number;
-  hint?: string;
+export type InsightsPanelProps = {
+  meta: RepoMeta | null;
+  insights: RepoInsights;
+  nodes: TreeNode[];
+  rootName: string;
+  loading?: boolean;
+  error?: string | null;
+  onRetry?: () => void;
+  onSelectFile?: (path: string) => void;
   className?: string;
-}) {
-  return (
-    <div className={cn("rounded-lg border border-border bg-surface-2 p-3", className)}>
-      <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
-        {label}
-      </p>
-      <p className="mt-1 font-mono text-lg text-foreground">{value}</p>
-      {hint && <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{hint}</p>}
-    </div>
-  );
-}
-
-export function LanguageBars({
-  languages,
-  limit = 6,
-}: {
-  languages: RepoInsights["languages"];
-  limit?: number;
-}) {
-  const top = languages.slice(0, limit);
-  const max = Math.max(1, ...top.map((l) => l.files));
-  return (
-    <ul className="space-y-2">
-      {top.map((lang) => (
-        <li key={lang.ext || "none"}>
-          <div className="flex items-baseline justify-between gap-2">
-            <span className="truncate font-mono text-xs text-foreground/90">{lang.label}</span>
-            <span className="font-mono text-[10px] text-muted-foreground">
-              {lang.files} · {formatBytes(lang.bytes)}
-            </span>
-          </div>
-          <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-surface-2">
-            <div
-              className="h-full rounded-full bg-primary/80 transition-all duration-500"
-              style={{ width: `${(lang.files / max) * 100}%` }}
-            />
-          </div>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-export function Section({
-  title,
-  children,
-  action,
-}: {
-  title: string;
-  children: React.ReactNode;
-  action?: React.ReactNode;
-}) {
-  return (
-    <section className="border-b border-border px-4 py-4 last:border-b-0">
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <h3 className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
-          {title}
-        </h3>
-        {action}
-      </div>
-      {children}
-    </section>
-  );
-}
+};
 
 export function InsightsPanel({
   meta,
   insights,
-  fileTree,
+  nodes,
+  rootName,
+  loading,
+  error,
+  onRetry,
   onSelectFile,
-}: {
-  meta: RepoMeta;
-  insights: RepoInsights;
-  fileTree?: FileNode[];
-  onSelectFile: (path: string) => void;
-}) {
-  const rootName = meta.full_name.split("/")[1] ?? meta.full_name;
-  const [depth, setDepth] = useState<2 | 3 | 99>(3);
+  className,
+}: InsightsPanelProps) {
+  if (error) {
+    return (
+      <div className={cn("rl-scroll overflow-auto p-4", className)}>
+        <ErrorState title="Insights unavailable" detail={error} onRetry={onRetry} />
+      </div>
+    );
+  }
 
-  const treeText = useMemo(() => {
-    if (!fileTree?.length) return "";
-    return formatTreeAscii(fileTree, {
-      maxDepth: depth,
-      rootName,
-    });
-  }, [fileTree, depth, rootName]);
-
-  const previewLines = treeText ? treeText.split("\n").slice(0, 36) : [];
-
-  const onCopyTree = async () => {
-    if (!treeText) return;
-    const ok = await copyText(treeText);
-    if (ok) toast.success("Directory tree copied");
-    else toast.error("Could not copy to clipboard");
-  };
-
-  const onCopyAiPrompt = async () => {
-    const text = buildAiPrompt({
-      meta,
-      insights,
-      fileTree,
-      treeDepth: Math.min(depth, 4),
-    });
-    const ok = await copyText(text);
-    if (ok) toast.success("AI context prompt copied");
-    else toast.error("Could not copy to clipboard");
-  };
+  const treePreview = nodes.length
+    ? formatTreeAscii(nodes, { maxDepth: 2, rootName }).split("\n").slice(0, 40)
+    : [];
 
   return (
-    <aside className="flex h-full min-h-0 flex-col overflow-y-auto" aria-label="Repository insights">
-      <Section
-        title="Repository"
-        action={
-          <button
-            type="button"
-            onClick={onCopyAiPrompt}
-            title="Copy meta + tree as AI prompt"
-            className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary"
-          >
-            <Sparkles className="size-3" />
-            AI prompt
-          </button>
-        }
+    <div className={cn("rl-scroll min-h-0 overflow-auto bg-surface p-3", className)}>
+      <motion.div
+        variants={stagger(0.05)}
+        initial="hidden"
+        animate="show"
+        className="space-y-5"
       >
-        <p className="text-sm leading-relaxed text-foreground/90">
-          {meta.description || "No description provided."}
-        </p>
-        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 font-mono text-[11px] text-muted-foreground">
-          <span className="flex items-center gap-1.5">
-            <Star aria-hidden className="size-3.5 text-primary" />
-            {meta.stargazers_count.toLocaleString()}
-          </span>
-          <span className="flex items-center gap-1.5">
-            <GitFork aria-hidden className="size-3.5" />
-            {meta.forks_count.toLocaleString()}
-          </span>
-          <span className="flex items-center gap-1.5">
-            <CircleDot aria-hidden className="size-3.5" />
-            {meta.open_issues_count.toLocaleString()} open
-          </span>
-          {meta.license?.spdx_id && (
-            <span className="flex items-center gap-1.5">
-              <Scale aria-hidden className="size-3.5" />
-              {meta.license.spdx_id}
-            </span>
-          )}
-        </div>
-      </Section>
-
-      <Section title="Composition">
-        <div className="grid grid-cols-2 gap-2">
-          <Stat label="Files" value={insights.totalFiles.toLocaleString()} />
-          <Stat label="Folders" value={insights.totalFolders.toLocaleString()} />
-          <Stat label="Tracked size" value={formatBytes(insights.totalBytes)} />
-          <Stat label="Repo size" value={formatBytes(meta.size * 1024)} hint="reported by GitHub" />
-        </div>
-      </Section>
-
-      <Section title="File types">
-        <LanguageBars languages={insights.languages} />
-      </Section>
-
-      <Section title="Largest files">
-        <ul className="space-y-1">
-          {insights.largestFiles.map((file) => (
-            <li key={file.path}>
-              <button
-                type="button"
-                onClick={() => onSelectFile(file.path)}
-                className="flex w-full items-baseline justify-between gap-3 rounded-md px-2 py-1 text-left transition-colors hover:bg-accent/70"
-              >
-                <span className="truncate font-mono text-xs text-foreground/85">{file.path}</span>
-                <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
-                  {formatBytes(file.size)}
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      </Section>
-
-      {fileTree && fileTree.length > 0 && (
-        <Section
-          title="Directory tree"
-          action={
-            <button
-              type="button"
-              onClick={onCopyTree}
-              className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground transition-colors hover:border-border-strong hover:text-foreground"
-            >
-              <Copy className="size-3" />
-              Copy
-            </button>
-          }
-        >
-          <div className="mb-2 flex flex-wrap gap-1">
-            {(
-              [
-                [2, "Depth 2"],
-                [3, "Depth 3"],
-                [99, "All"],
-              ] as const
-            ).map(([d, label]) => (
-              <button
-                key={d}
-                type="button"
-                onClick={() => setDepth(d)}
-                className={cn(
-                  "rounded border px-1.5 py-0.5 font-mono text-[10px] transition-colors",
-                  depth === d
-                    ? "border-primary/40 bg-primary/10 text-primary"
-                    : "border-border text-muted-foreground hover:text-foreground",
-                )}
-              >
-                {label}
-              </button>
-            ))}
+        {/* ------------------------------------------------------- quick stats */}
+        <section aria-labelledby="insights-stats">
+          <SectionHeading
+            icon={<Gauge className="h-4 w-4" />}
+            title="At a glance"
+            subtitle={meta ? `Updated ${formatRelative(meta.pushedAt)}` : undefined}
+          />
+          <div className="mt-2.5 grid grid-cols-2 gap-2">
+            {loading ? (
+              <>
+                <Skeleton className="h-[68px]" />
+                <Skeleton className="h-[68px]" />
+                <Skeleton className="h-[68px]" />
+                <Skeleton className="h-[68px]" />
+              </>
+            ) : (
+              <>
+                <StatTile
+                  icon={<Files className="h-3.5 w-3.5" />}
+                  label="Files"
+                  value={insights.fileCount.toLocaleString()}
+                  hint={`${insights.dirCount} folders`}
+                />
+                <StatTile
+                  icon={<HardDrive className="h-3.5 w-3.5" />}
+                  label="Repo size"
+                  value={formatBytes(insights.totalBytes)}
+                  hint={`avg ${formatBytes(insights.avgFileBytes)}/file`}
+                />
+                <StatTile
+                  icon={<GitBranch className="h-3.5 w-3.5" />}
+                  label="Max depth"
+                  value={insights.maxDepth}
+                  hint="nested levels"
+                />
+                <StatTile
+                  icon={<FlaskConical className="h-3.5 w-3.5" />}
+                  label="Tests"
+                  value={insights.testFiles.toLocaleString()}
+                  hint={`${insights.configFiles} config files`}
+                />
+              </>
+            )}
           </div>
-          <pre className="max-h-64 overflow-auto rounded-md border border-border bg-surface-2 p-2 font-mono text-[10px] leading-relaxed text-foreground/85">
-            {previewLines.join("\n")}
-            {treeText.split("\n").length > 36 ? "\n…" : ""}
-          </pre>
-        </Section>
-      )}
+        </section>
 
-      <Section title="Structure">
-        <ul className="space-y-1">
-          {insights.topLevel.map((entry) => (
-            <li
-              key={entry.path}
-              className="flex items-baseline justify-between gap-3 px-2 font-mono text-xs"
-            >
-              <span className="truncate text-foreground/85">{entry.path}</span>
-              <span className="shrink-0 text-[10px] text-muted-foreground">
-                {entry.files} files
-              </span>
-            </li>
-          ))}
-        </ul>
-      </Section>
-    </aside>
+        {/* --------------------------------------------------------- languages */}
+        {insights.languages.length ? (
+          <section aria-labelledby="insights-langs">
+            <SectionHeading
+              icon={<FileStack className="h-4 w-4" />}
+              title="Languages"
+              subtitle="By bytes of tracked source"
+            />
+            {/* Multi-color Spectrum Bar */}
+            <div className="mt-2.5 flex h-2 w-full overflow-hidden rounded-full bg-surface-2 border border-line/50">
+              {insights.languages.map((lang) => (
+                <div
+                  key={lang.name}
+                  style={{ width: `${lang.share * 100}%`, backgroundColor: lang.color }}
+                  title={`${lang.name} · ${(lang.share * 100).toFixed(1)}%`}
+                />
+              ))}
+            </div>
+            <ul className="mt-3 space-y-2">
+              {insights.languages.slice(0, 7).map((lang, index) => (
+                <motion.li
+                  key={lang.name}
+                  initial={{ opacity: 0, x: -6 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: index * 0.03, duration: 0.18, ease: EASE_OUT }}
+                >
+                  <div className="flex items-center justify-between gap-2 text-xs">
+                    <span className="flex items-center gap-1.5 text-ink">
+                      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: lang.color }} />
+                      {lang.name}
+                    </span>
+                    <span className="font-mono text-faint">
+                      {(lang.share * 100).toFixed(1)}% · {lang.files}
+                    </span>
+                  </div>
+                  <div className="mt-1">
+                    <Bar value={lang.share} color={lang.color} />
+                  </div>
+                </motion.li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
+
+        {/* -------------------------------------------------------- tree block */}
+        {nodes.length ? (
+          <section aria-labelledby="insights-tree">
+            <SectionHeading
+              icon={<FolderTree className="h-4 w-4" />}
+              title="Directory tree"
+              subtitle="Depth-2 preview"
+              action={<CopyTreeMenu nodes={nodes} rootName={rootName} compact />}
+            />
+            <pre className="rl-scroll mt-2.5 max-h-52 overflow-auto rounded-xl border border-line bg-surface-2 p-3 font-mono text-[11px] leading-relaxed text-muted">
+              {treePreview.join("\n")}
+            </pre>
+          </section>
+        ) : null}
+
+        {/* ---------------------------------------------------------- top dirs */}
+        {insights.topDirs.length ? (
+          <section aria-labelledby="insights-dirs">
+            <SectionHeading
+              icon={<Layers className="h-4 w-4" />}
+              title="Where the code lives"
+              subtitle="Files per top-level entry"
+            />
+            <ul className="mt-2.5 space-y-1.5">
+              {insights.topDirs.map((dir) => (
+                <li key={dir.path} className="text-xs">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="truncate font-mono text-ink">{dir.path}</span>
+                    <span className="font-mono text-faint">{dir.files} · {formatBytes(dir.bytes)}</span>
+                  </div>
+                  <div className="mt-1">
+                    <Bar value={dir.files / (insights.topDirs[0]?.files || 1)} />
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
+
+        {/* ------------------------------------------------------ largest files */}
+        {insights.largestFiles.length ? (
+          <section aria-labelledby="insights-large">
+            <SectionHeading
+              icon={<Boxes className="h-4 w-4" />}
+              title="Largest files"
+              subtitle="Candidates for splitting"
+            />
+            <ul className="mt-2.5 space-y-1">
+              {insights.largestFiles.map((file) => (
+                <li key={file.path}>
+                  <button
+                    type="button"
+                    onClick={() => onSelectFile?.(file.path)}
+                    className="flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left transition-colors duration-150 hover:bg-surface-2 focus-visible:bg-surface-2 focus-visible:outline-none"
+                  >
+                    <span className="truncate font-mono text-[11px] text-ink">{file.path}</span>
+                    <span className="shrink-0 font-mono text-[11px] text-faint">
+                      {formatBytes(file.size)}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
+
+        {/* ---------------------------------------------------------- manifests */}
+        {insights.deps.length ? (
+          <section aria-labelledby="insights-deps">
+            <SectionHeading
+              icon={<Package className="h-4 w-4" />}
+              title="Dependency manifests"
+              subtitle={`${insights.deps.length} detected`}
+            />
+            <ul className="mt-2.5 flex flex-wrap gap-1.5">
+              {insights.deps.map((dep) => (
+                <li key={dep.path}>
+                  <Badge tone="neutral">{dep.name}</Badge>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
+
+        {/* --------------------------------------------------------- repo meta */}
+        {meta ? (
+          <section aria-labelledby="insights-meta">
+            <SectionHeading icon={<Star className="h-4 w-4" />} title="Repository" />
+            <dl className="mt-2.5 grid grid-cols-2 gap-2 text-xs">
+              <Meta label="Stars" value={formatCount(meta.stars)} />
+              <Meta label="Forks" value={formatCount(meta.forks)} />
+              <Meta label="Open issues" value={formatCount(meta.openIssues)} />
+              <Meta label="License" value={meta.license ?? "—"} />
+              <Meta label="Default branch" value={meta.ref} />
+              <Meta label="Language" value={meta.language ?? "—"} />
+            </dl>
+            {meta.topics.length ? (
+              <ul className="mt-2.5 flex flex-wrap gap-1.5">
+                {meta.topics.slice(0, 8).map((topic) => (
+                  <li key={topic}>
+                    <Badge tone="accent">#{topic}</Badge>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </section>
+        ) : null}
+      </motion.div>
+    </div>
+  );
+}
+
+function Meta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-line bg-surface-2 px-2.5 py-1.5">
+      <dt className="text-[10px] uppercase tracking-wider text-faint">{label}</dt>
+      <dd className="mt-0.5 truncate font-mono text-[11px] text-ink">{value}</dd>
+    </div>
   );
 }

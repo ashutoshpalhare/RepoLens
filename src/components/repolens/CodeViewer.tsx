@@ -1,213 +1,326 @@
-import { Check, Copy, ExternalLink, FileWarning, Image as ImageIcon, Link2 } from "lucide-react";
-import { Highlight, themes } from "prism-react-renderer";
-import { useEffect, useMemo, useState } from "react";
-import { FileTypeIcon } from "@/components/repolens/FileTypeIcon";
-import { EmptyBlock, ErrorBlock, SkeletonLines } from "@/components/repolens/StateBlocks";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import { Check, ChevronRight, Copy, ExternalLink, FileCode2, FileWarning, WrapText } from "lucide-react";
+import { Kbd } from "@/components/ui/primitives";
+import type { FileContent, TreeItem } from "@/lib/github";
+import { fileUrl, treeEntryUrl } from "@/lib/github";
+import {
+  highlightLines,
+  languageFromPath,
+  normalizeNewlines,
+  type HighlightLine,
+} from "@/lib/highlight";
 import { formatBytes } from "@/lib/analysis";
-import { MAX_FILE_BYTES, extOf, isBinaryPath } from "@/lib/github";
-import { useFileContent } from "@/hooks/useRepoData";
-import type { RepoRef } from "@/types/repo";
+import { copyText } from "@/lib/hooks";
+import { EASE_OUT } from "@/lib/motion";
+import { cn } from "@/utils/cn";
+import { Badge } from "@/components/ui/primitives";
+import { EmptyState, ErrorState, LoadingState } from "./StateBlocks";
 
-const LANG: Record<string, string> = {
-  ts: "typescript",
-  tsx: "tsx",
-  js: "javascript",
-  jsx: "jsx",
-  mjs: "javascript",
-  cjs: "javascript",
-  json: "json",
-  md: "markdown",
-  mdx: "markdown",
-  css: "css",
-  scss: "scss",
-  html: "markup",
-  svg: "markup",
-  xml: "markup",
-  yml: "yaml",
-  yaml: "yaml",
-  py: "python",
-  rb: "ruby",
-  go: "go",
-  rs: "rust",
-  java: "java",
-  sh: "bash",
-  sql: "sql",
-  toml: "toml",
-  c: "c",
-  cpp: "cpp",
-  php: "php",
+const CHUNK = 1500;
+
+export type CodeViewerProps = {
+  owner: string;
+  repo: string;
+  branch: string;
+  path: string | null;
+  file?: FileContent;
+  loading?: boolean;
+  error?: string | null;
+  errorAction?: React.ReactNode;
+  oversizedSize?: number;
+  entryType?: TreeItem["type"];
+  onRetry?: () => void;
+  onOpenInExplorer?: () => void;
+  className?: string;
 };
 
-interface Props {
-  ref_: RepoRef;
-  branch: string | undefined;
-  path: string | null;
-  size?: number;
-  blobUrlBase?: string;
-  specialMode?: "symlink" | "submodule" | null;
-}
-
 export function CodeViewer({
-  ref_,
+  owner,
+  repo,
   branch,
   path,
-  size,
-  blobUrlBase,
-  specialMode = null,
-}: Props) {
-  const binary = !!path && isBinaryPath(path);
-  const tooLarge = (size ?? 0) > MAX_FILE_BYTES;
-  const shouldFetch = !!path && !binary && !tooLarge && !specialMode;
-  const query = useFileContent(ref_, branch, shouldFetch ? path : null);
-  const [copied, setCopied] = useState(false);
+  file,
+  loading,
+  error,
+  errorAction,
+  oversizedSize,
+  entryType,
+  onRetry,
+  onOpenInExplorer,
+  className,
+}: CodeViewerProps) {
+  const [wrap, setWrap] = useState(false);
+  const [visible, setVisible] = useState(CHUNK);
+  const [copiedPath, setCopiedPath] = useState(false);
+
+  // Plain lines render immediately; Shiki tokens replace them once the lazy highlighter is ready.
+  const lines = useMemo(() => {
+    if (!file || file.binary || !file.text) return [];
+    return normalizeNewlines(file.text).split("\n");
+  }, [file]);
+
+  // Tagged with the file they belong to, so a slow result can never paint over a newer file.
+  const [highlighted, setHighlighted] = useState<{ source: FileContent; lines: HighlightLine[] } | null>(null);
 
   useEffect(() => {
-    if (!copied) return;
-    const t = setTimeout(() => setCopied(false), 1600);
-    return () => clearTimeout(t);
-  }, [copied]);
+    setHighlighted(null);
+    if (!file || file.binary || !file.text) return;
+    let cancelled = false;
+    void highlightLines(file.text, file.path).then((result) => {
+      if (!cancelled && result) setHighlighted({ source: file, lines: result });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [file]);
 
-  const language = useMemo(() => (path ? (LANG[extOf(path)] ?? "text") : "text"), [path]);
-  const githubUrl = path && blobUrlBase ? `${blobUrlBase}/${path.split("/").map(encodeURIComponent).join("/")}` : null;
+  const tokenLines = highlighted && highlighted.source === file ? highlighted.lines : null;
+  const language = path ? languageFromPath(path) : "text";
 
-  const copy = async () => {
-    if (!query.data) return;
-    try {
-      await navigator.clipboard.writeText(query.data);
-      setCopied(true);
-    } catch {
-      /* clipboard unavailable */
-    }
+  const handleCopyPath = async () => {
+    if (!path) return;
+    await copyText(path, "File path copied");
+    setCopiedPath(true);
+    setTimeout(() => setCopiedPath(false), 2000);
   };
 
+  if (!path) {
+    return (
+      <div className={cn("flex min-h-0 flex-1 flex-col items-center justify-center p-6 text-center bg-surface/50", className)}>
+        <div className="mx-auto max-w-sm rounded-2xl border border-line/80 bg-surface/80 p-6 shadow-sm rl-hairline-top">
+          <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-xl border border-accent-border/40 bg-accent-soft text-accent">
+            <FileCode2 className="h-5 w-5" />
+          </div>
+          <h3 className="mt-4 text-sm font-semibold text-ink">No file selected</h3>
+          <p className="mt-1.5 text-xs text-muted leading-relaxed">
+            Pick a file from the explorer on the left or press <Kbd>⌘P</Kbd> to fuzzy-search across the entire codebase.
+          </p>
+
+          <div className="mt-5 space-y-1.5 border-t border-line/60 pt-4 text-left font-mono text-[11px] text-faint">
+            <div className="flex items-center justify-between">
+              <span>Quick open</span>
+              <span className="flex gap-1"><Kbd>⌘</Kbd><Kbd>P</Kbd></span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span>Toggle explorer</span>
+              <span className="flex gap-1"><Kbd>⌘</Kbd><Kbd>B</Kbd></span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span>Copy tree</span>
+              <Kbd>C</Kbd>
+            </div>
+          </div>
+
+          {onOpenInExplorer ? (
+            <button
+              type="button"
+              onClick={onOpenInExplorer}
+              className="mt-5 inline-flex min-h-9 w-full items-center justify-center rounded-lg border border-line-strong bg-surface-2 px-3 text-xs font-medium text-ink transition-colors hover:border-accent hover:text-accent"
+            >
+              Browse files in explorer
+            </button>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+
+  const segments = path.split("/");
+  const shown = lines.slice(0, visible);
+
   return (
-    <section className="flex h-full min-h-0 flex-col bg-background" aria-label="Code viewer">
-      <header className="flex h-11 shrink-0 items-center gap-2 border-b border-border bg-surface/90 px-3 shadow-[0_1px_0_hsl(var(--border)/0.5)] backdrop-blur">
-        {path ? (
-          <>
-            <FileTypeIcon path={path} />
-            <div className="min-w-0 flex-1 truncate font-mono text-xs text-foreground">
-              <span className="text-muted-foreground">{path.split("/").slice(0, -1).join("/")}/</span>
-              <span className="font-medium">{path.split("/").at(-1)}</span>
-            </div>
-            {!!size && !specialMode && (
-              <span className="shrink-0 rounded border border-border bg-surface-2 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
-                {formatBytes(size)}
-              </span>
-            )}
-            {specialMode && (
-              <span className="shrink-0 rounded border border-border bg-surface-2 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-                {specialMode}
-              </span>
-            )}
-            <div className="ml-auto flex shrink-0 items-center gap-1.5">
-              {!!query.data && (
-                <button
-                  type="button"
-                  onClick={copy}
-                  className="inline-flex items-center gap-1 rounded-md border border-transparent px-2 py-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground transition-colors hover:border-border hover:bg-surface-2 hover:text-foreground"
-                >
-                  {copied ? (
-                    <>
-                      Copied <Check aria-hidden className="size-3" />
-                    </>
-                  ) : (
-                    <>
-                      Copy <Copy aria-hidden className="size-3" />
-                    </>
+    <div className={cn("flex min-h-0 flex-1 flex-col bg-surface", className)}>
+      <header className="flex shrink-0 flex-wrap items-center gap-2 border-b border-line/80 bg-surface px-3 py-2">
+        <nav aria-label="File path" className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
+          {segments.map((segment, index) => {
+            const last = index === segments.length - 1;
+            return (
+              <span key={`${segment}-${index}`} className="flex shrink-0 items-center gap-1">
+                <span
+                  className={cn(
+                    "font-mono text-xs",
+                    last ? "text-accent font-semibold" : "text-muted hover:text-ink",
                   )}
-                </button>
-              )}
-              {githubUrl && (
-                <a
-                  href={githubUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex items-center gap-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground transition-colors hover:text-primary"
                 >
-                  GitHub <ExternalLink aria-hidden className="size-3" />
-                </a>
-              )}
-            </div>
-          </>
-        ) : (
-          <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-            No file selected
-          </span>
-        )}
+                  {segment}
+                </span>
+                {!last ? (
+                  <ChevronRight className="h-3 w-3 text-faint/60" aria-hidden="true" />
+                ) : null}
+              </span>
+            );
+          })}
+        </nav>
+
+        <div className="flex shrink-0 items-center gap-1.5">
+          {file && !file.binary ? (
+            <Badge
+              tone="neutral"
+              className="hidden md:inline-flex font-mono text-[10px]"
+              title={language === "text" ? "No grammar for this file type — shown as plain text" : "Highlighted with Shiki"}
+            >
+              {language === "text" ? "plain text" : language}
+            </Badge>
+          ) : null}
+          {file ? (
+            <Badge tone="neutral" className="hidden sm:inline-flex font-mono text-[10px]">
+              {formatBytes(file.size)}
+              {lines.length ? ` · ${lines.length.toLocaleString()} lines` : ""}
+            </Badge>
+          ) : null}
+          {file?.truncated ? <Badge tone="warn">truncated</Badge> : null}
+          <button
+            type="button"
+            onClick={handleCopyPath}
+            aria-label="Copy file path"
+            title="Copy file path (y)"
+            className="flex h-7 items-center gap-1.5 rounded-md border border-line-strong/80 bg-surface-2/60 px-2 text-[11px] text-muted transition-colors duration-150 hover:border-accent hover:text-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          >
+            {copiedPath ? <Check className="h-3 w-3 text-ok" /> : <Copy className="h-3 w-3" />}
+            <span className="hidden sm:inline">{copiedPath ? "Copied" : "Path"}</span>
+          </button>
+          <a
+            href={entryType === "submodule" || entryType === "symlink"
+              ? treeEntryUrl(owner, repo, branch, path, entryType)
+              : fileUrl(owner, repo, branch, path)}
+            target="_blank"
+            rel="noreferrer noopener"
+            aria-label="Open this file on GitHub (new tab)"
+            title="Open this file on GitHub"
+            className="flex h-7 items-center gap-1.5 rounded-md border border-line-strong/80 bg-surface-2/60 px-2 text-[11px] text-muted transition-colors duration-150 hover:border-accent hover:text-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          >
+            <ExternalLink className="h-3 w-3" />
+            <span className="hidden sm:inline">GitHub</span>
+          </a>
+          <button
+            type="button"
+            onClick={() => setWrap((v) => !v)}
+            aria-pressed={wrap}
+            aria-label="Toggle soft wrap"
+            title="Toggle soft wrap"
+            className={cn(
+              "flex h-7 w-7 items-center justify-center rounded-md border border-line-strong/80 bg-surface-2/60 text-muted transition-colors duration-150 hover:border-accent hover:text-accent",
+              wrap && "border-accent text-accent bg-accent-soft",
+            )}
+          >
+            <WrapText className="h-3.5 w-3.5" />
+          </button>
+        </div>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-auto">
-        {!path ? (
-          <EmptyBlock
-            title="Select a file to read it"
-            hint="Pick any file from the explorer. Source files render with syntax highlighting and line numbers."
-          />
-        ) : specialMode === "symlink" ? (
-          <EmptyBlock
-            icon={Link2}
-            title="Symbolic link"
-            hint="This entry is a git symlink. Open it on GitHub to see the target path."
-          />
-        ) : specialMode === "submodule" ? (
-          <EmptyBlock
-            icon={Link2}
-            title="Git submodule"
-            hint="This entry points to another repository. Open it on GitHub to browse the submodule."
-          />
-        ) : binary ? (
-          <EmptyBlock
-            icon={ImageIcon}
-            title="Binary file"
-            hint="RepoLens does not render binary content. Open it on GitHub to view or download it."
-          />
-        ) : tooLarge ? (
-          <EmptyBlock
-            icon={FileWarning}
-            title={`File too large to render (${formatBytes(size ?? 0)})`}
-            hint={`Files above ${formatBytes(MAX_FILE_BYTES)} are skipped to keep the viewer responsive. Open on GitHub instead.`}
-          />
-        ) : query.isPending ? (
-          <SkeletonLines rows={12} />
-        ) : query.isError ? (
-          <ErrorBlock error={query.error} onRetry={() => query.refetch()} />
-        ) : !query.data?.trim() ? (
-          <EmptyBlock title="Empty file" hint="This file has no content." />
-        ) : (
-          <Highlight theme={themes.vsDark} code={query.data.replace(/\n$/, "")} language={language}>
-            {({ tokens, getLineProps, getTokenProps }) => (
-              <pre className="animate-fade-up min-w-full bg-transparent py-4 font-mono text-[12.5px] leading-[1.7]">
-                <code>
-                  {tokens.map((line, i) => {
-                    const lineProps = getLineProps({ line });
-                    return (
-                      <div
-                        key={i}
-                        {...lineProps}
-                        className="group flex border-l-2 border-transparent hover:border-primary/30 hover:bg-surface/60"
-                        style={{ ...lineProps.style, background: "transparent" }}
+      <div className="rl-scroll min-h-0 flex-1 overflow-auto">
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={path}
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.18, ease: EASE_OUT }}
+            className="min-w-full"
+          >
+            {loading ? (
+              <LoadingState label={`Loading ${path.split("/").pop()}…`} />
+            ) : error ? (
+              <ErrorState title="Could not load this file" detail={error} onRetry={onRetry} action={errorAction} />
+            ) : entryType === "symlink" || entryType === "submodule" ? (
+              <EmptyState
+                icon={<ExternalLink className="h-5 w-5" />}
+                title={entryType === "submodule" ? "Git submodule" : "Symbolic link"}
+                detail={`RepoLens does not fetch ${entryType}s as regular files because their target may live outside this tree.`}
+                action={
+                  <a
+                    href={treeEntryUrl(owner, repo, branch, path, entryType)}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    className="mt-1 inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-line-strong px-3 text-xs font-medium text-ink transition-colors duration-150 hover:border-accent hover:text-accent"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" />
+                    Follow on GitHub
+                  </a>
+                }
+              />
+            ) : oversizedSize ? (
+              <EmptyState
+                icon={<FileWarning className="h-5 w-5" />}
+                title="File is too large to render safely"
+                detail={`${formatBytes(oversizedSize)} exceeds RepoLens's ${formatBytes(1_500_000)} browser preview limit.`}
+                action={
+                  <a
+                    href={fileUrl(owner, repo, branch, path)}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    className="mt-1 inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-line-strong px-3 text-xs font-medium text-ink transition-colors duration-150 hover:border-accent hover:text-accent"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" />
+                    Open on GitHub
+                  </a>
+                }
+              />
+            ) : !file ? (
+              <EmptyState title="Nothing to show" />
+            ) : file.binary ? (
+              <EmptyState
+                icon={<FileWarning className="h-5 w-5" />}
+                title="Binary or unsupported file"
+                detail={`${formatBytes(file.size)} — open it on GitHub to preview.`}
+              />
+            ) : (
+              <table className="rl-code w-full border-collapse font-mono text-[12.5px] leading-[1.65]">
+                <tbody>
+                  {shown.map((line, index) => (
+                    <tr key={index} className="group transition-colors duration-75 hover:bg-surface-2/90">
+                      <td
+                        className={cn(
+                          "select-none border-r border-line/60 px-2.5 text-right align-top text-faint/60 tabular-nums text-xs group-hover:text-faint",
+                          "sticky left-0 bg-surface w-[1%] min-w-[3.5rem]",
+                        )}
                       >
-                        <span
-                          aria-hidden
-                          className="sticky left-0 w-14 shrink-0 select-none bg-background/95 pr-4 text-right text-muted-foreground/45 group-hover:text-muted-foreground"
-                        >
-                          {i + 1}
-                        </span>
-                        <span className="whitespace-pre pr-8 text-foreground/90">
-                          {line.map((token, key) => {
-                            const props = getTokenProps({ token });
-                            return <span key={key} {...props} />;
-                          })}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </code>
-              </pre>
+                        {index + 1}
+                      </td>
+                      <td
+                        className={cn(
+                          "px-3.5 align-top text-ink selection:bg-accent/30",
+                          wrap ? "whitespace-pre-wrap break-words" : "whitespace-pre",
+                        )}
+                      >
+                        {tokenLines?.[index]?.length ? (
+                          tokenLines[index]!.map((token, tokenIndex) => (
+                            <span
+                              key={tokenIndex}
+                              className="rl-tok"
+                              style={token.style as CSSProperties | undefined}
+                            >
+                              {token.content}
+                            </span>
+                          ))
+                        ) : (
+                          line || " "
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             )}
-          </Highlight>
-        )}
+
+            {file && !file.binary && lines.length > visible ? (
+              <div className="flex items-center justify-center gap-3 border-t border-line px-4 py-4">
+                <span className="text-xs text-faint">
+                  Showing {visible.toLocaleString()} of {lines.length.toLocaleString()} lines
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setVisible((v) => v + CHUNK)}
+                  className="rounded-lg border border-line-strong px-3 py-1.5 text-xs font-medium text-ink transition-colors duration-150 hover:border-accent hover:text-accent"
+                >
+                  Load more
+                </button>
+              </div>
+            ) : null}
+          </motion.div>
+        </AnimatePresence>
       </div>
-    </section>
+    </div>
   );
 }
