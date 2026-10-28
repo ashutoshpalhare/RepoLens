@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   validate:
-    name: Typecheck and build
+    name: Typecheck, build, and smoke test
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -36,5 +36,5 @@ jobs:
       - name: Build production site
         run: npm run build
 
-      - name: Verify generated entry point
-        run: test -s dist/index.html
+      - name: Verify production artifact
+        run: npm run smoke
