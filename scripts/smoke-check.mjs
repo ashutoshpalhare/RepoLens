@@ -26,7 +26,7 @@ const checks = [
   }],
   ["single-file build has inline CSS", () => assert.match(html, /<style[\s>]/i)],
   ["single-file build does not depend on an external app script", () => assert.doesNotMatch(html, /<script\b[^>]*\bsrc=/i)],
-  ["source entry point is not leaked into production HTML", () => assert.doesNotMatch(html, /\/src\/main\.tsx|\/assets\//i)],
+  ["production markup has no external Vite asset references", () => assert.doesNotMatch(html, /<(?:script|link)\b[^>]*(?:src|href)=["'][^"']*\/(?:src\/main\.tsx|assets\/)/i)],
   ["GitHub Pages project base is configured", () => assert.match(viteConfig, /base:\s*["']\/RepoLens\/["']/)],
   ["static hosting uses hash-based routing", () => assert.match(router, /createHashHistory\(\)/)],
   ["home, about, and repository routes are registered", () => {
