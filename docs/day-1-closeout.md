@@ -18,9 +18,12 @@ Day 1 scope: establish the Vite SPA on `main`, preserve the existing RepoLens ex
 - [x] Retain home, about, repository, and repository-path routes.
 - [x] Keep application components and utility/library code organized under `src/`.
 - [x] Document prerequisites, local setup, validation commands, privacy/data flow, and deployment.
-- [x] Add CI for locked dependency installation, TypeScript checks, and production builds.
+- [x] Add a contribution guide referenced by the About page and README.
+- [x] Add CI for locked dependency installation, TypeScript checks, production builds, and smoke checks.
 - [x] Restore automated GitHub Pages deployment with the official Pages artifact/deploy actions.
-- [x] Add a production artifact smoke check for generated HTML, inline assets, project base path, routes, and official GitHub API hosts.
+- [x] Add production artifact checks for generated HTML, inline assets, project base path, route registration, and official GitHub API hosts.
+- [x] Add parser regression checks for valid slugs, GitHub tree URLs, `.git` suffixes, invalid hosts, empty input, and malformed percent-encoding.
+- [x] Handle malformed percent-encoding as invalid user input instead of allowing a runtime exception.
 
 ## Verified from GitHub Actions
 
@@ -29,7 +32,7 @@ Day 1 scope: establish the Vite SPA on `main`, preserve the existing RepoLens ex
 
 Run history: [GitHub Actions](https://github.com/ashutoshpalhare/RepoLens).
 
-The new artifact smoke check will run in CI and before each deployment after this closeout PR is merged.
+The new artifact and parser checks will run in CI and before each deployment after this closeout PR is merged.
 
 ## Manual browser verification
 
