@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="RepoLens — a fast, fully client-side GitHub repository explorer. Paste any public repo URL to browse the file tree, read syntax-highlighted code and get instant insights and architecture notes. No backend, no sign-in."
+    />
+    <meta name="theme-color" content="#0c0e12" />
+    <script>
+      // Apply the stored theme before first paint (dark-first, light supported).
+      try {
+        var t = localStorage.getItem("repolens.theme");
+        if (t === "light") document.documentElement.classList.remove("dark");
+        else document.documentElement.classList.add("dark");
+      } catch (e) {}
+    </script>
+    <title>RepoLens — client-side GitHub repository explorer</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
