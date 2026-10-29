@@ -379,57 +379,117 @@ const FILE_CACHE_VERSION = 1;
 
 type CachedFile = FileContent & { key: string; cachedAt: number };
 
-export function clearFileContentCache(): Promise<void> {
-  if (typeof indexedDB === "undefined") return Promise.resolve();
-  return new Promise((resolve) => {
-    const request = indexedDB.deleteDatabase(FILE_CACHE_DB);
-    request.onsuccess = () => resolve();
-    request.onerror = () => resolve();
-    request.onblocked = () => resolve();
-  });
+export async function clearFileContentCache(): Promise<void> {
+  if (typeof indexedDB === "undefined") return;
+  try {
+    await new Promise<void>((resolve) => {
+      try {
+        const request = indexedDB.deleteDatabase(FILE_CACHE_DB);
+        request.onsuccess = () => resolve();
+        request.onerror = () => resolve();
+        request.onblocked = () => resolve();
+      } catch {
+        resolve();
+      }
+    });
+  } catch {
+    // Cache cleanup is best-effort and must not block token removal.
+  }
 }
 
-function openFileCache(): Promise<IDBDatabase | null> {
-  if (typeof indexedDB === "undefined") return Promise.resolve(null);
-  return new Promise<IDBDatabase | null>((resolve) => {
-    const request = indexedDB.open(FILE_CACHE_DB, FILE_CACHE_VERSION);
-    request.onupgradeneeded = () => {
-      if (!request.result.objectStoreNames.contains(FILE_CACHE_STORE)) {
-        request.result.createObjectStore(FILE_CACHE_STORE, { keyPath: "key" });
+async function openFileCache(): Promise<IDBDatabase | null> {
+  if (typeof indexedDB === "undefined") return null;
+  try {
+    return await new Promise<IDBDatabase | null>((resolve) => {
+      let settled = false;
+      const finish = (db: IDBDatabase | null) => {
+        if (settled) {
+          db?.close();
+          return;
+        }
+        settled = true;
+        resolve(db);
+      };
+
+      try {
+        const request = indexedDB.open(FILE_CACHE_DB, FILE_CACHE_VERSION);
+        request.onupgradeneeded = () => {
+          try {
+            if (!request.result.objectStoreNames.contains(FILE_CACHE_STORE)) {
+              request.result.createObjectStore(FILE_CACHE_STORE, { keyPath: "key" });
+            }
+          } catch {
+            request.transaction?.abort();
+          }
+        };
+        request.onsuccess = () => finish(request.result);
+        request.onerror = () => finish(null);
+        request.onblocked = () => finish(null);
+      } catch {
+        finish(null);
       }
-    };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => resolve(null);
-    request.onblocked = () => resolve(null);
-  });
+    });
+  } catch {
+    return null;
+  }
 }
 
 async function readCachedFile(key: string): Promise<FileContent | null> {
   const db = await openFileCache();
   if (!db) return null;
-  return new Promise<FileContent | null>((resolve) => {
-    const request = db.transaction(FILE_CACHE_STORE, "readonly").objectStore(FILE_CACHE_STORE).get(key);
-    request.onsuccess = () => {
-      const cached = request.result as CachedFile | undefined;
-      // Revalidate after seven days; refs are part of the key so commit/branch changes separate naturally.
-      resolve(cached && Date.now() - cached.cachedAt < 7 * 86_400_000 ? cached : null);
-    };
-    request.onerror = () => resolve(null);
-  }).finally(() => db.close());
+  try {
+    return await new Promise<FileContent | null>((resolve) => {
+      try {
+        const transaction = db.transaction(FILE_CACHE_STORE, "readonly");
+        const request = transaction.objectStore(FILE_CACHE_STORE).get(key);
+        request.onsuccess = () => {
+          const cached = request.result as CachedFile | undefined;
+          // Revalidate after seven days; refs are part of the key so commit/branch changes separate naturally.
+          resolve(cached && Date.now() - cached.cachedAt < 7 * 86_400_000 ? cached : null);
+        };
+        request.onerror = () => resolve(null);
+        transaction.onerror = () => resolve(null);
+        transaction.onabort = () => resolve(null);
+      } catch {
+        resolve(null);
+      }
+    });
+  } catch {
+    return null;
+  } finally {
+    try {
+      db.close();
+    } catch {
+      // A cache connection can already be closed by the browser.
+    }
+  }
 }
 
 async function writeCachedFile(key: string, file: FileContent): Promise<void> {
   if (file.oversized) return;
   const db = await openFileCache();
   if (!db) return;
-  await new Promise<void>((resolve) => {
-    const transaction = db.transaction(FILE_CACHE_STORE, "readwrite");
-    transaction.objectStore(FILE_CACHE_STORE).put({ ...file, key, cachedAt: Date.now() });
-    transaction.oncomplete = () => resolve();
-    transaction.onerror = () => resolve();
-    transaction.onabort = () => resolve();
-  });
-  db.close();
+  try {
+    await new Promise<void>((resolve) => {
+      try {
+        const transaction = db.transaction(FILE_CACHE_STORE, "readwrite");
+        transaction.objectStore(FILE_CACHE_STORE).put({ ...file, key, cachedAt: Date.now() });
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => resolve();
+        transaction.onabort = () => resolve();
+      } catch {
+        resolve();
+      }
+    });
+  } catch {
+    // A failed cache write must never become an unhandled rejection.
+  } finally {
+    try {
+      db.close();
+    } catch {
+      // Ignore a connection already closed by the browser.
+    }
+  }
 }
 
 export async function fetchFileContent(

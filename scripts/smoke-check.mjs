@@ -31,7 +31,7 @@ const transpiledGitHub = ts.transpileModule(githubClient, {
   },
 });
 const githubModuleUrl = `data:text/javascript;base64,${Buffer.from(transpiledGitHub.outputText).toString("base64")}`;
-const { fetchRepoMeta, GitHubError } = await import(githubModuleUrl);
+const { fetchRepoMeta, fetchFileContent, GitHubError } = await import(githubModuleUrl);
 
 const checks = [
   ["package identity is RepoLens", () => assert.equal(pkg.name, "repolens")],
@@ -99,6 +99,25 @@ const checks = [
       });
     } finally {
       globalThis.fetch = originalFetch;
+    }
+  }],
+  ["file content still loads when IndexedDB cache access throws", async () => {
+    const originalFetch = globalThis.fetch;
+    const indexedDBDescriptor = Object.getOwnPropertyDescriptor(globalThis, "indexedDB");
+    globalThis.fetch = async () => new Response("export const value = 1;", { status: 200 });
+    Object.defineProperty(globalThis, "indexedDB", {
+      configurable: true,
+      writable: true,
+      value: { open() { throw new Error("IndexedDB is blocked"); } },
+    });
+    try {
+      const file = await fetchFileContent("demo", "repo", "main", "src/index.ts");
+      assert.equal(file.text, "export const value = 1;");
+      assert.equal(file.binary, false);
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (indexedDBDescriptor) Object.defineProperty(globalThis, "indexedDB", indexedDBDescriptor);
+      else delete globalThis.indexedDB;
     }
   }],
   ["keeps ordinary forbidden responses classified as authorization errors", async () => {
