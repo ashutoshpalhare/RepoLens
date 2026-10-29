@@ -15,9 +15,11 @@ import { WorkspacePage } from "./routes/r.$owner.$repo";
  */
 const rootRoute = createRootRoute({ component: () => <Outlet /> });
 
-const validateWorkspaceSearch = (search: Record<string, unknown>) => {
+const validateWorkspaceSearch = (
+  search: Record<string, unknown>,
+): { ref?: string } => {
   const ref = typeof search.ref === "string" ? search.ref.trim() : "";
-  return { ref: ref || undefined };
+  return ref ? { ref } : {};
 };
 
 const indexRoute = createRoute({

@@ -560,7 +560,7 @@ export function WorkspacePage() {
                     file={fileQuery.data}
                     loading={Boolean(selectedFilePath) && fileQuery.isPending}
                     error={selectedMissing
-                      ? "This file does not exist on the repository's current default branch."
+                      ? "This path does not exist on the selected ref."
                       : fileQuery.isError
                         ? (fileQuery.error as Error).message
                         : null}
