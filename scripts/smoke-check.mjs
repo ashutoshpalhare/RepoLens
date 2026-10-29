@@ -70,7 +70,7 @@ const checks = [
     const startedAt = Date.now();
     globalThis.fetch = async () => new Response(JSON.stringify({ message: "You have exceeded a secondary rate limit." }), {
       status: 403,
-      headers: { "content-type": "application/json", "x-ratelimit-limit": "60", "x-ratelimit-remaining": "45" },
+      headers: { "content-type": "application/json", "x-ratelimit-limit": "60", "x-ratelimit-remaining": "45", "x-ratelimit-reset": String(Math.floor((startedAt + 3_600_000) / 1000)) },
     });
     try {
       await assert.rejects(fetchRepoMeta("facebook", "react"), (error) => {

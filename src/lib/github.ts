@@ -95,10 +95,10 @@ async function rateLimitDetails(response: Response): Promise<RateLimitDetails> {
   const limited = response.status === 429 || remaining === 0 || retryAfterSeconds !== null || secondaryLimit;
   const resetAt = retryAfterSeconds !== null
     ? Date.now() + retryAfterSeconds * 1000
-    : resetSeconds !== null
-      ? resetSeconds * 1000
-      : secondaryLimit
-        ? Date.now() + 60_000
+    : secondaryLimit
+      ? Date.now() + 60_000
+      : resetSeconds !== null
+        ? resetSeconds * 1000
         : null;
 
   return { limited, resetAt, remaining };
