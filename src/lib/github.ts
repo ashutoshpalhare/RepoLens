@@ -414,7 +414,7 @@ export async function fetchFileContent(
   const cached = await readCachedFile(cacheKey);
   if (cached) return cached;
 
-  const url = `${RAW_ROOT}/${owner}/${repo}/${encodeURIComponent(ref)}/${path
+  const url = `${RAW_ROOT}/${owner}/${repo}/${encodePathSegments(ref)}/${path
     .split("/")
     .map(encodeURIComponent)
     .join("/")}`;
@@ -585,7 +585,7 @@ export function treeEntryUrl(
   path: string,
   type: TreeItem["type"],
 ): string {
-  const kind = type === "submodule" ? "tree" : "blob";
+  const kind = type === "tree" || type === "submodule" ? "tree" : "blob";
   return `${repoUrl(owner, repo)}/${kind}/${encodePathSegments(ref)}/${encodePathSegments(path)}`;
 }
 

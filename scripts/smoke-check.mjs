@@ -4,13 +4,16 @@ import { resolve } from "node:path";
 import ts from "typescript";
 
 const read = (path) => readFile(resolve(process.cwd(), path), "utf8");
-const [html, packageJsonText, viteConfig, router, githubClient, parserSource] = await Promise.all([
+const [html, packageJsonText, viteConfig, router, githubClient, parserSource, homePage, workspacePage, fileExplorer] = await Promise.all([
   read("dist/index.html"),
   read("package.json"),
   read("vite.config.ts"),
   read("src/router.tsx"),
   read("src/lib/github.ts"),
   read("src/lib/parse.ts"),
+  read("src/routes/index.tsx"),
+  read("src/routes/r.$owner.$repo.tsx"),
+  read("src/components/repolens/FileExplorer.tsx"),
 ]);
 const pkg = JSON.parse(packageJsonText);
 const transpiledParser = ts.transpileModule(parserSource, {
@@ -39,6 +42,14 @@ const checks = [
   ["production markup has no external Vite asset references", () => assert.doesNotMatch(html, /<(?:script|link)\b[^>]*(?:src|href)=["'][^"']*\/(?:src\/main\.tsx|assets\/)/i)],
   ["GitHub Pages project base is configured", () => assert.match(viteConfig, /base:\s*["']\/RepoLens\/["']/)],
   ["static hosting uses hash-based routing", () => assert.match(router, /createHashHistory\(\)/)],
+  ["workspace routes validate the optional ref search parameter", () => assert.equal((router.match(/validateSearch:\s*validateWorkspaceSearch/g) ?? []).length, 2)],
+  ["home flow preserves the selected ref from GitHub URLs", () => {
+    assert.match(homePage, /search:\s*parsed\.ref\s*\?\s*\{\s*ref:\s*parsed\.ref\s*\}\s*:\s*\{\s*\}/);
+  }],
+  ["workspace tree queries use the selected ref", () => assert.match(workspacePage, /queryKey:\s*\[\s*"repo-tree",\s*owner,\s*repo,\s*ref\s*\]/)],
+  ["directory deep links are not fetched as source files", () => assert.match(workspacePage, /selectedFilePath\s*=\s*selectedItem\?\.type\s*===\s*"blob"\s*\?\s*selectedPath\s*:\s*null/)],
+  ["file explorer expands ancestors for deep links", () => assert.match(fileExplorer, /selectedPath\.startsWith\(`\$\{node\.path\}\/`\)/)],
+  ["directory permalinks use GitHub tree URLs", () => assert.match(githubClient, /type\s*===\s*"tree"\s*\|\|\s*type\s*===\s*"submodule"\s*\?\s*"tree"/)],
   ["home, about, and repository routes are registered", () => {
     assert.match(router, /path:\s*["']\/["']/);
     assert.match(router, /path:\s*["']\/about["']/);
@@ -48,6 +59,7 @@ const checks = [
   ["raw file requests use the official raw GitHub host", () => assert.match(githubClient, /https:\/\/raw\.githubusercontent\.com/)],
   ["parses owner/repo shorthand", () => assert.deepEqual(parseGitHubInput("facebook/react"), { owner: "facebook", repo: "react", kind: "repo" })],
   ["parses a GitHub tree URL and path", () => assert.deepEqual(parseGitHubInput("https://github.com/facebook/react/tree/main/packages/react"), { owner: "facebook", repo: "react", kind: "tree", ref: "main", path: "packages/react" })],
+  ["parses a GitHub blob URL and path", () => assert.deepEqual(parseGitHubInput("https://github.com/facebook/react/blob/main/packages/react/index.js"), { owner: "facebook", repo: "react", kind: "blob", ref: "main", path: "packages/react/index.js" })],
   ["strips the .git suffix", () => assert.deepEqual(parseGitHubInput("facebook/react.git"), { owner: "facebook", repo: "react", kind: "repo" })],
   ["rejects a non-GitHub hostname", () => assert.equal(parseGitHubInput("https://example.com/facebook/react"), null)],
   ["rejects malformed percent-encoding without throwing", () => assert.equal(parseGitHubInput("facebook/react/tree/%E0%A4%A"), null)],
