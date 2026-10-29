@@ -1,5 +1,5 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "@tanstack/react-router";
+import { Link, useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -79,6 +79,8 @@ export function WorkspacePage() {
   };
   const { owner, repo } = params;
   const navigate = useNavigate();
+  const search = useSearch({ strict: false }) as { ref?: string };
+  const requestedRef = typeof search.ref === "string" ? search.ref.trim() : "";
   const queryClient = useQueryClient();
   const { theme, toggle } = useThemeUI();
   const isDesktop = useIsDesktop();
@@ -110,24 +112,26 @@ export function WorkspacePage() {
     queryFn: ({ signal }) => fetchRepoMeta(owner, repo, signal),
   });
 
-  const ref = metaQuery.data?.ref ?? "HEAD";
+  const ref = requestedRef || metaQuery.data?.ref || "HEAD";
   const treeQuery = useQuery({
-    queryKey: ["repo-tree", owner, repo, metaQuery.data?.ref],
+    queryKey: ["repo-tree", owner, repo, ref],
     queryFn: ({ signal }) => fetchRepoTree(owner, repo, ref, signal),
     enabled: Boolean(metaQuery.data),
   });
 
   const selectedItem = treeQuery.data?.items.find((item) => item.path === selectedPath);
   const selectedMissing = Boolean(selectedPath && treeQuery.data && !selectedItem);
+  const selectedFilePath = selectedItem?.type === "blob" ? selectedPath : null;
+  const codePath = selectedFilePath ?? (selectedMissing ? selectedPath : null);
   const selectedTooLarge = Boolean(
     selectedItem?.type === "blob" && selectedItem.size > MAX_RENDER_BYTES,
   );
 
   const fileQuery = useQuery({
-    queryKey: ["repo-file", owner, repo, ref, selectedPath],
-    queryFn: ({ signal }) => fetchFileContent(owner, repo, ref, selectedPath!, signal),
+    queryKey: ["repo-file", owner, repo, ref, selectedFilePath],
+    queryFn: ({ signal }) => fetchFileContent(owner, repo, ref, selectedFilePath!, signal),
     enabled:
-      Boolean(selectedPath) &&
+      Boolean(selectedFilePath) &&
       Boolean(metaQuery.data) &&
       Boolean(treeQuery.data) &&
       selectedItem?.type === "blob" &&
@@ -189,6 +193,7 @@ export function WorkspacePage() {
     void navigate({
       to: "/r/$owner/$repo/$",
       params: { owner, repo, _splat: path },
+      search: requestedRef ? { ref: requestedRef } : {},
     });
     setCenterTab("code");
     if (!isDesktop) setMobileTab("code");
@@ -208,9 +213,9 @@ export function WorkspacePage() {
 
   // Route params are the source of truth, so browser back/forward restores files.
   useEffect(() => {
-    if (selectedPath) setCenterTab("code");
+    if (codePath) setCenterTab("code");
     else setCenterTab("overview");
-  }, [selectedPath]);
+  }, [codePath]);
 
   const refreshAfterCredentialChange = () => {
     void queryClient.invalidateQueries({ queryKey: ["repo-meta", owner, repo] });
@@ -260,8 +265,8 @@ export function WorkspacePage() {
   const copyPath = () => {
     if (selectedPath) {
       void copyText(
-        `https://github.com/${owner}/${repo}/blob/${ref}/${selectedPath}`,
-        "File permalink copied",
+        treeEntryUrl(owner, repo, ref, selectedPath, selectedItem?.type ?? "blob"),
+        selectedItem?.type === "tree" ? "Directory permalink copied" : "File permalink copied",
       );
     } else {
       void copyText(`https://github.com/${owner}/${repo}`, "Repository URL copied");
@@ -367,6 +372,7 @@ export function WorkspacePage() {
           <Link
             to="/r/$owner/$repo/$"
             params={{ owner, repo, _splat: "" }}
+            search={requestedRef ? { ref: requestedRef } : {}}
             className="truncate font-mono text-xs font-medium text-muted transition-colors duration-150 hover:text-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
           >
             <span className="text-faint">{owner}/</span>
@@ -374,7 +380,7 @@ export function WorkspacePage() {
           </Link>
           <span className="inline-flex items-center gap-1 rounded-md border border-line-strong/80 bg-surface-2 px-1.5 py-0.5 font-mono text-[11px] text-muted">
             <GitBranch className="h-3 w-3 text-accent" />
-            <span>{meta.ref}</span>
+            <span>{ref}</span>
           </span>
           {meta.language ? (
             <Badge tone="neutral" dot>
@@ -437,8 +443,8 @@ export function WorkspacePage() {
           <OpenInMenu
             owner={owner}
             repo={repo}
-            branch={meta.ref}
-            filePath={selectedPath}
+            branch={ref}
+            filePath={selectedFilePath}
             className="hidden sm:block"
           />
         </div>
@@ -449,9 +455,9 @@ export function WorkspacePage() {
         <p className="flex min-w-0 items-center gap-1.5 truncate font-mono text-[11px] text-muted">
           <span className="text-faint">{owner}/</span>
           <span className="truncate text-ink">{repo}</span>
-          <span className="text-faint">@{meta.ref}</span>
+          <span className="text-faint">@{ref}</span>
         </p>
-        <OpenInMenu owner={owner} repo={repo} branch={meta.ref} filePath={selectedPath} />
+        <OpenInMenu owner={owner} repo={repo} branch={ref} filePath={selectedFilePath} />
       </div>
 
       <div className="flex min-h-0 flex-1">
@@ -496,11 +502,11 @@ export function WorkspacePage() {
               />
               <CenterTabButton
                 active={centerTab === "code"}
-                onClick={() => (selectedPath ? setCenterTab("code") : focusFilter())}
+                onClick={() => (codePath ? setCenterTab("code") : focusFilter())}
                 icon={<FileCode2 className="h-3.5 w-3.5" />}
-                label={selectedPath ? (selectedPath.split("/").pop() ?? "Code") : "Code"}
-                badge={selectedPath ? selectedPath.split(".").pop() : undefined}
-                disabled={!selectedPath}
+                label={codePath ? (codePath.split("/").pop() ?? "Code") : "Code"}
+                badge={codePath ? codePath.split(".").pop() : undefined}
+                disabled={!codePath}
               />
               <CenterTabButton
                 active={centerTab === "architecture"}
@@ -549,12 +555,12 @@ export function WorkspacePage() {
                   <CodeViewer
                     owner={owner}
                     repo={repo}
-                    branch={meta.ref}
-                    path={selectedPath}
+                    branch={ref}
+                    path={codePath}
                     file={fileQuery.data}
-                    loading={fileQuery.isPending}
+                    loading={Boolean(selectedFilePath) && fileQuery.isPending}
                     error={selectedMissing
-                      ? "This file does not exist on the repository's current default branch."
+                      ? "This path does not exist on the selected ref."
                       : fileQuery.isError
                         ? (fileQuery.error as Error).message
                         : null}

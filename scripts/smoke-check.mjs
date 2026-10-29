@@ -4,13 +4,16 @@ import { resolve } from "node:path";
 import ts from "typescript";
 
 const read = (path) => readFile(resolve(process.cwd(), path), "utf8");
-const [html, packageJsonText, viteConfig, router, githubClient, parserSource] = await Promise.all([
+const [html, packageJsonText, viteConfig, router, githubClient, parserSource, homePage, workspacePage, fileExplorer] = await Promise.all([
   read("dist/index.html"),
   read("package.json"),
   read("vite.config.ts"),
   read("src/router.tsx"),
   read("src/lib/github.ts"),
   read("src/lib/parse.ts"),
+  read("src/routes/index.tsx"),
+  read("src/routes/r.$owner.$repo.tsx"),
+  read("src/components/repolens/FileExplorer.tsx"),
 ]);
 const pkg = JSON.parse(packageJsonText);
 const transpiledParser = ts.transpileModule(parserSource, {
@@ -21,6 +24,14 @@ const transpiledParser = ts.transpileModule(parserSource, {
 });
 const parserUrl = `data:text/javascript;base64,${Buffer.from(transpiledParser.outputText).toString("base64")}`;
 const { parseGitHubInput } = await import(parserUrl);
+const transpiledGitHub = ts.transpileModule(githubClient, {
+  compilerOptions: {
+    target: ts.ScriptTarget.ES2022,
+    module: ts.ModuleKind.ESNext,
+  },
+});
+const githubModuleUrl = `data:text/javascript;base64,${Buffer.from(transpiledGitHub.outputText).toString("base64")}`;
+const { fetchRepoMeta, fetchFileContent, GitHubError } = await import(githubModuleUrl);
 
 const checks = [
   ["package identity is RepoLens", () => assert.equal(pkg.name, "repolens")],
@@ -39,6 +50,14 @@ const checks = [
   ["production markup has no external Vite asset references", () => assert.doesNotMatch(html, /<(?:script|link)\b[^>]*(?:src|href)=["'][^"']*\/(?:src\/main\.tsx|assets\/)/i)],
   ["GitHub Pages project base is configured", () => assert.match(viteConfig, /base:\s*["']\/RepoLens\/["']/)],
   ["static hosting uses hash-based routing", () => assert.match(router, /createHashHistory\(\)/)],
+  ["workspace routes validate the optional ref search parameter", () => assert.equal((router.match(/validateSearch:\s*validateWorkspaceSearch/g) ?? []).length, 2)],
+  ["home flow preserves the selected ref from GitHub URLs", () => {
+    assert.match(homePage, /search:\s*parsed\.ref\s*\?\s*\{\s*ref:\s*parsed\.ref\s*\}\s*:\s*\{\s*\}/);
+  }],
+  ["workspace tree queries use the selected ref", () => assert.match(workspacePage, /queryKey:\s*\[\s*"repo-tree",\s*owner,\s*repo,\s*ref\s*\]/)],
+  ["directory deep links are not fetched as source files", () => assert.match(workspacePage, /selectedFilePath\s*=\s*selectedItem\?\.type\s*===\s*"blob"\s*\?\s*selectedPath\s*:\s*null/)],
+  ["file explorer expands ancestors for deep links", () => assert.match(fileExplorer, /selectedPath\.startsWith\(`\$\{node\.path\}\/`\)/)],
+  ["directory permalinks use GitHub tree URLs", () => assert.match(githubClient, /type\s*===\s*"tree"\s*\|\|\s*type\s*===\s*"submodule"\s*\?\s*"tree"/)],
   ["home, about, and repository routes are registered", () => {
     assert.match(router, /path:\s*["']\/["']/);
     assert.match(router, /path:\s*["']\/about["']/);
@@ -46,8 +65,80 @@ const checks = [
   }],
   ["GitHub API requests use the official API host", () => assert.match(githubClient, /https:\/\/api\.github\.com/)],
   ["raw file requests use the official raw GitHub host", () => assert.match(githubClient, /https:\/\/raw\.githubusercontent\.com/)],
+  ["recognizes secondary rate limits without a zero primary budget", async () => {
+    const originalFetch = globalThis.fetch;
+    const startedAt = Date.now();
+    globalThis.fetch = async () => new Response(JSON.stringify({ message: "You have exceeded a secondary rate limit." }), {
+      status: 403,
+      headers: { "content-type": "application/json", "x-ratelimit-limit": "60", "x-ratelimit-remaining": "45", "x-ratelimit-reset": String(Math.floor((startedAt + 3_600_000) / 1000)) },
+    });
+    try {
+      await assert.rejects(fetchRepoMeta("facebook", "react"), (error) => {
+        assert.ok(error instanceof GitHubError);
+        assert.equal(error.kind, "rate-limit");
+        assert.ok(error.resetAt !== null && error.resetAt >= startedAt + 59_000 && error.resetAt <= startedAt + 61_000);
+        return true;
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  }],
+  ["honors Retry-After on a 403 response", async () => {
+    const originalFetch = globalThis.fetch;
+    const startedAt = Date.now();
+    globalThis.fetch = async () => new Response(JSON.stringify({ message: "Please retry later." }), {
+      status: 403,
+      headers: { "content-type": "application/json", "x-ratelimit-limit": "60", "x-ratelimit-remaining": "45", "retry-after": "3" },
+    });
+    try {
+      await assert.rejects(fetchRepoMeta("facebook", "react"), (error) => {
+        assert.ok(error instanceof GitHubError);
+        assert.equal(error.kind, "rate-limit");
+        assert.ok(error.resetAt !== null && error.resetAt >= startedAt + 2_500 && error.resetAt <= startedAt + 5_000);
+        return true;
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  }],
+  ["file content still loads when IndexedDB cache access throws", async () => {
+    const originalFetch = globalThis.fetch;
+    const indexedDBDescriptor = Object.getOwnPropertyDescriptor(globalThis, "indexedDB");
+    globalThis.fetch = async () => new Response("export const value = 1;", { status: 200 });
+    Object.defineProperty(globalThis, "indexedDB", {
+      configurable: true,
+      writable: true,
+      value: { open() { throw new Error("IndexedDB is blocked"); } },
+    });
+    try {
+      const file = await fetchFileContent("demo", "repo", "main", "src/index.ts");
+      assert.equal(file.text, "export const value = 1;");
+      assert.equal(file.binary, false);
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (indexedDBDescriptor) Object.defineProperty(globalThis, "indexedDB", indexedDBDescriptor);
+      else delete globalThis.indexedDB;
+    }
+  }],
+  ["keeps ordinary forbidden responses classified as authorization errors", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () => new Response(JSON.stringify({ message: "Resource not accessible by integration" }), {
+      status: 403,
+      headers: { "content-type": "application/json", "x-ratelimit-limit": "60", "x-ratelimit-remaining": "45" },
+    });
+    try {
+      await assert.rejects(fetchRepoMeta("facebook", "react"), (error) => {
+        assert.ok(error instanceof GitHubError);
+        assert.equal(error.kind, "auth");
+        return true;
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  }],
   ["parses owner/repo shorthand", () => assert.deepEqual(parseGitHubInput("facebook/react"), { owner: "facebook", repo: "react", kind: "repo" })],
   ["parses a GitHub tree URL and path", () => assert.deepEqual(parseGitHubInput("https://github.com/facebook/react/tree/main/packages/react"), { owner: "facebook", repo: "react", kind: "tree", ref: "main", path: "packages/react" })],
+  ["parses a GitHub blob URL and path", () => assert.deepEqual(parseGitHubInput("https://github.com/facebook/react/blob/main/packages/react/index.js"), { owner: "facebook", repo: "react", kind: "blob", ref: "main", path: "packages/react/index.js" })],
   ["strips the .git suffix", () => assert.deepEqual(parseGitHubInput("facebook/react.git"), { owner: "facebook", repo: "react", kind: "repo" })],
   ["rejects a non-GitHub hostname", () => assert.equal(parseGitHubInput("https://example.com/facebook/react"), null)],
   ["rejects malformed percent-encoding without throwing", () => assert.equal(parseGitHubInput("facebook/react/tree/%E0%A4%A"), null)],

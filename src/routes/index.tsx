@@ -121,6 +121,7 @@ export function IndexPage() {
     void navigate({
       to: "/r/$owner/$repo/$",
       params: { owner: parsed.owner, repo: parsed.repo, _splat: parsed.path ?? "" },
+      search: parsed.ref ? { ref: parsed.ref } : {},
     });
   };
 

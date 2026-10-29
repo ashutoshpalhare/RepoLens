@@ -15,6 +15,13 @@ import { WorkspacePage } from "./routes/r.$owner.$repo";
  */
 const rootRoute = createRootRoute({ component: () => <Outlet /> });
 
+const validateWorkspaceSearch = (
+  search: Record<string, unknown>,
+): { ref?: string } => {
+  const ref = typeof search.ref === "string" ? search.ref.trim() : "";
+  return ref ? { ref } : {};
+};
+
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
@@ -30,12 +37,14 @@ const aboutRoute = createRoute({
 const workspaceRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/r/$owner/$repo",
+  validateSearch: validateWorkspaceSearch,
   component: WorkspacePage,
 });
 
 const workspaceFileRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/r/$owner/$repo/$",
+  validateSearch: validateWorkspaceSearch,
   component: WorkspacePage,
 });
 

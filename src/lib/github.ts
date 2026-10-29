@@ -73,6 +73,37 @@ function numberHeader(headers: Headers, name: string): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+type RateLimitDetails = {
+  limited: boolean;
+  resetAt: number | null;
+  remaining: number | null;
+};
+
+/** Detect both primary and secondary GitHub API limits from headers and error payloads. */
+async function rateLimitDetails(response: Response): Promise<RateLimitDetails> {
+  const remaining = numberHeader(response.headers, "x-ratelimit-remaining");
+  const resetSeconds = numberHeader(response.headers, "x-ratelimit-reset");
+  const retryAfterSeconds = numberHeader(response.headers, "retry-after");
+  let secondaryLimit = false;
+
+  if (response.status === 403 && retryAfterSeconds === null && remaining !== 0) {
+    const body = (await response.clone().json().catch(() => null)) as { message?: unknown } | null;
+    const message = typeof body?.message === "string" ? body.message.toLowerCase() : "";
+    secondaryLimit = message.includes("secondary rate limit") || message.includes("abuse detection");
+  }
+
+  const limited = response.status === 429 || remaining === 0 || retryAfterSeconds !== null || secondaryLimit;
+  const resetAt = retryAfterSeconds !== null
+    ? Date.now() + retryAfterSeconds * 1000
+    : secondaryLimit
+      ? Date.now() + 60_000
+      : resetSeconds !== null
+        ? resetSeconds * 1000
+        : null;
+
+  return { limited, resetAt, remaining };
+}
+
 function captureRateLimit(headers: Headers) {
   const limit = numberHeader(headers, "x-ratelimit-limit");
   const remaining = numberHeader(headers, "x-ratelimit-remaining");
@@ -212,20 +243,18 @@ async function api<T>(path: string, signal?: AbortSignal): Promise<T> {
       );
     }
     if (res.status === 403 || res.status === 429) {
-      const remaining = numberHeader(res.headers, "x-ratelimit-remaining");
-      const resetSeconds = numberHeader(res.headers, "x-ratelimit-reset");
-      const resetAt = resetSeconds === null ? null : resetSeconds * 1000;
-      if (remaining === 0 || res.status === 429) {
+      const details = await rateLimitDetails(res);
+      if (details.limited) {
         throw new GitHubError(
-          "GitHub's API request limit has been reached. RepoLens will show when the budget resets; adding a token in Settings raises the limit.",
+          "GitHub is rate-limiting this request. Wait for the retry/reset time before trying again.",
           res.status,
-          { kind: "rate-limit", resetAt, remaining },
+          { kind: "rate-limit", resetAt: details.resetAt, remaining: details.remaining },
         );
       }
       throw new GitHubError(
         "GitHub refused this request. If you added a token, check that it is valid and has access to this repository.",
         res.status,
-        { kind: "auth", resetAt, remaining },
+        { kind: "auth", resetAt: details.resetAt, remaining: details.remaining },
       );
     }
     if (res.status === 404) {
@@ -350,57 +379,117 @@ const FILE_CACHE_VERSION = 1;
 
 type CachedFile = FileContent & { key: string; cachedAt: number };
 
-export function clearFileContentCache(): Promise<void> {
-  if (typeof indexedDB === "undefined") return Promise.resolve();
-  return new Promise((resolve) => {
-    const request = indexedDB.deleteDatabase(FILE_CACHE_DB);
-    request.onsuccess = () => resolve();
-    request.onerror = () => resolve();
-    request.onblocked = () => resolve();
-  });
+export async function clearFileContentCache(): Promise<void> {
+  if (typeof indexedDB === "undefined") return;
+  try {
+    await new Promise<void>((resolve) => {
+      try {
+        const request = indexedDB.deleteDatabase(FILE_CACHE_DB);
+        request.onsuccess = () => resolve();
+        request.onerror = () => resolve();
+        request.onblocked = () => resolve();
+      } catch {
+        resolve();
+      }
+    });
+  } catch {
+    // Cache cleanup is best-effort and must not block token removal.
+  }
 }
 
-function openFileCache(): Promise<IDBDatabase | null> {
-  if (typeof indexedDB === "undefined") return Promise.resolve(null);
-  return new Promise<IDBDatabase | null>((resolve) => {
-    const request = indexedDB.open(FILE_CACHE_DB, FILE_CACHE_VERSION);
-    request.onupgradeneeded = () => {
-      if (!request.result.objectStoreNames.contains(FILE_CACHE_STORE)) {
-        request.result.createObjectStore(FILE_CACHE_STORE, { keyPath: "key" });
+async function openFileCache(): Promise<IDBDatabase | null> {
+  if (typeof indexedDB === "undefined") return null;
+  try {
+    return await new Promise<IDBDatabase | null>((resolve) => {
+      let settled = false;
+      const finish = (db: IDBDatabase | null) => {
+        if (settled) {
+          db?.close();
+          return;
+        }
+        settled = true;
+        resolve(db);
+      };
+
+      try {
+        const request = indexedDB.open(FILE_CACHE_DB, FILE_CACHE_VERSION);
+        request.onupgradeneeded = () => {
+          try {
+            if (!request.result.objectStoreNames.contains(FILE_CACHE_STORE)) {
+              request.result.createObjectStore(FILE_CACHE_STORE, { keyPath: "key" });
+            }
+          } catch {
+            request.transaction?.abort();
+          }
+        };
+        request.onsuccess = () => finish(request.result);
+        request.onerror = () => finish(null);
+        request.onblocked = () => finish(null);
+      } catch {
+        finish(null);
       }
-    };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => resolve(null);
-    request.onblocked = () => resolve(null);
-  });
+    });
+  } catch {
+    return null;
+  }
 }
 
 async function readCachedFile(key: string): Promise<FileContent | null> {
   const db = await openFileCache();
   if (!db) return null;
-  return new Promise<FileContent | null>((resolve) => {
-    const request = db.transaction(FILE_CACHE_STORE, "readonly").objectStore(FILE_CACHE_STORE).get(key);
-    request.onsuccess = () => {
-      const cached = request.result as CachedFile | undefined;
-      // Revalidate after seven days; refs are part of the key so commit/branch changes separate naturally.
-      resolve(cached && Date.now() - cached.cachedAt < 7 * 86_400_000 ? cached : null);
-    };
-    request.onerror = () => resolve(null);
-  }).finally(() => db.close());
+  try {
+    return await new Promise<FileContent | null>((resolve) => {
+      try {
+        const transaction = db.transaction(FILE_CACHE_STORE, "readonly");
+        const request = transaction.objectStore(FILE_CACHE_STORE).get(key);
+        request.onsuccess = () => {
+          const cached = request.result as CachedFile | undefined;
+          // Revalidate after seven days; refs are part of the key so commit/branch changes separate naturally.
+          resolve(cached && Date.now() - cached.cachedAt < 7 * 86_400_000 ? cached : null);
+        };
+        request.onerror = () => resolve(null);
+        transaction.onerror = () => resolve(null);
+        transaction.onabort = () => resolve(null);
+      } catch {
+        resolve(null);
+      }
+    });
+  } catch {
+    return null;
+  } finally {
+    try {
+      db.close();
+    } catch {
+      // A cache connection can already be closed by the browser.
+    }
+  }
 }
 
 async function writeCachedFile(key: string, file: FileContent): Promise<void> {
   if (file.oversized) return;
   const db = await openFileCache();
   if (!db) return;
-  await new Promise<void>((resolve) => {
-    const transaction = db.transaction(FILE_CACHE_STORE, "readwrite");
-    transaction.objectStore(FILE_CACHE_STORE).put({ ...file, key, cachedAt: Date.now() });
-    transaction.oncomplete = () => resolve();
-    transaction.onerror = () => resolve();
-    transaction.onabort = () => resolve();
-  });
-  db.close();
+  try {
+    await new Promise<void>((resolve) => {
+      try {
+        const transaction = db.transaction(FILE_CACHE_STORE, "readwrite");
+        transaction.objectStore(FILE_CACHE_STORE).put({ ...file, key, cachedAt: Date.now() });
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => resolve();
+        transaction.onabort = () => resolve();
+      } catch {
+        resolve();
+      }
+    });
+  } catch {
+    // A failed cache write must never become an unhandled rejection.
+  } finally {
+    try {
+      db.close();
+    } catch {
+      // Ignore a connection already closed by the browser.
+    }
+  }
 }
 
 export async function fetchFileContent(
@@ -414,7 +503,7 @@ export async function fetchFileContent(
   const cached = await readCachedFile(cacheKey);
   if (cached) return cached;
 
-  const url = `${RAW_ROOT}/${owner}/${repo}/${encodeURIComponent(ref)}/${path
+  const url = `${RAW_ROOT}/${owner}/${repo}/${encodePathSegments(ref)}/${path
     .split("/")
     .map(encodeURIComponent)
     .join("/")}`;
@@ -462,18 +551,16 @@ export async function fetchFileContent(
       );
     }
     if (res.status === 403 || res.status === 429) {
-      const remaining = numberHeader(res.headers, "x-ratelimit-remaining");
-      const resetSeconds = numberHeader(res.headers, "x-ratelimit-reset");
-      const resetAt = resetSeconds === null ? null : resetSeconds * 1000;
+      const details = await rateLimitDetails(res);
       throw new GitHubError(
-        remaining === 0 || res.status === 429
-          ? "GitHub's API request limit has been reached. Wait for the reset or add a token in Settings."
+        details.limited
+          ? "GitHub is rate-limiting this file request. Wait for the retry/reset time before trying again."
           : "GitHub refused this file request. Check the token in Settings.",
         res.status,
         {
-          kind: remaining === 0 || res.status === 429 ? "rate-limit" : "auth",
-          resetAt,
-          remaining,
+          kind: details.limited ? "rate-limit" : "auth",
+          resetAt: details.resetAt,
+          remaining: details.remaining,
         },
       );
     }
@@ -585,7 +672,7 @@ export function treeEntryUrl(
   path: string,
   type: TreeItem["type"],
 ): string {
-  const kind = type === "submodule" ? "tree" : "blob";
+  const kind = type === "tree" || type === "submodule" ? "tree" : "blob";
   return `${repoUrl(owner, repo)}/${kind}/${encodePathSegments(ref)}/${encodePathSegments(path)}`;
 }
 

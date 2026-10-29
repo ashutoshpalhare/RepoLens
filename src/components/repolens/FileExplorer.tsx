@@ -44,6 +44,25 @@ export function FileExplorer({
     setExpanded(new Set(nodes.filter((n) => n.type === "tree").map((n) => n.path)));
   }, [nodes]);
 
+  // Deep links can target nested files or folders; open their ancestors once the tree is ready.
+  useEffect(() => {
+    if (!selectedPath) return;
+    setExpanded((current) => {
+      const next = new Set(current);
+      const includeAncestors = (list: TreeNode[]) => {
+        for (const node of list) {
+          if (node.type !== "tree") continue;
+          if (selectedPath === node.path || selectedPath.startsWith(`${node.path}/`)) {
+            next.add(node.path);
+          }
+          includeAncestors(node.children);
+        }
+      };
+      includeAncestors(nodes);
+      return next;
+    });
+  }, [nodes, selectedPath]);
+
   const allNodes = useMemo(() => {
     const out: TreeNode[] = [];
     const walk = (list: TreeNode[]) => {
