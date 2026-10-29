@@ -73,6 +73,37 @@ function numberHeader(headers: Headers, name: string): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+type RateLimitDetails = {
+  limited: boolean;
+  resetAt: number | null;
+  remaining: number | null;
+};
+
+/** Detect both primary and secondary GitHub API limits from headers and error payloads. */
+async function rateLimitDetails(response: Response): Promise<RateLimitDetails> {
+  const remaining = numberHeader(response.headers, "x-ratelimit-remaining");
+  const resetSeconds = numberHeader(response.headers, "x-ratelimit-reset");
+  const retryAfterSeconds = numberHeader(response.headers, "retry-after");
+  let secondaryLimit = false;
+
+  if (response.status === 403 && retryAfterSeconds === null && remaining !== 0) {
+    const body = (await response.clone().json().catch(() => null)) as { message?: unknown } | null;
+    const message = typeof body?.message === "string" ? body.message.toLowerCase() : "";
+    secondaryLimit = message.includes("secondary rate limit") || message.includes("abuse detection");
+  }
+
+  const limited = response.status === 429 || remaining === 0 || retryAfterSeconds !== null || secondaryLimit;
+  const resetAt = retryAfterSeconds !== null
+    ? Date.now() + retryAfterSeconds * 1000
+    : resetSeconds !== null
+      ? resetSeconds * 1000
+      : secondaryLimit
+        ? Date.now() + 60_000
+        : null;
+
+  return { limited, resetAt, remaining };
+}
+
 function captureRateLimit(headers: Headers) {
   const limit = numberHeader(headers, "x-ratelimit-limit");
   const remaining = numberHeader(headers, "x-ratelimit-remaining");
@@ -212,20 +243,18 @@ async function api<T>(path: string, signal?: AbortSignal): Promise<T> {
       );
     }
     if (res.status === 403 || res.status === 429) {
-      const remaining = numberHeader(res.headers, "x-ratelimit-remaining");
-      const resetSeconds = numberHeader(res.headers, "x-ratelimit-reset");
-      const resetAt = resetSeconds === null ? null : resetSeconds * 1000;
-      if (remaining === 0 || res.status === 429) {
+      const details = await rateLimitDetails(res);
+      if (details.limited) {
         throw new GitHubError(
-          "GitHub's API request limit has been reached. RepoLens will show when the budget resets; adding a token in Settings raises the limit.",
+          "GitHub is rate-limiting this request. Wait for the retry/reset time before trying again.",
           res.status,
-          { kind: "rate-limit", resetAt, remaining },
+          { kind: "rate-limit", resetAt: details.resetAt, remaining: details.remaining },
         );
       }
       throw new GitHubError(
         "GitHub refused this request. If you added a token, check that it is valid and has access to this repository.",
         res.status,
-        { kind: "auth", resetAt, remaining },
+        { kind: "auth", resetAt: details.resetAt, remaining: details.remaining },
       );
     }
     if (res.status === 404) {
@@ -462,18 +491,16 @@ export async function fetchFileContent(
       );
     }
     if (res.status === 403 || res.status === 429) {
-      const remaining = numberHeader(res.headers, "x-ratelimit-remaining");
-      const resetSeconds = numberHeader(res.headers, "x-ratelimit-reset");
-      const resetAt = resetSeconds === null ? null : resetSeconds * 1000;
+      const details = await rateLimitDetails(res);
       throw new GitHubError(
-        remaining === 0 || res.status === 429
-          ? "GitHub's API request limit has been reached. Wait for the reset or add a token in Settings."
+        details.limited
+          ? "GitHub is rate-limiting this file request. Wait for the retry/reset time before trying again."
           : "GitHub refused this file request. Check the token in Settings.",
         res.status,
         {
-          kind: remaining === 0 || res.status === 429 ? "rate-limit" : "auth",
-          resetAt,
-          remaining,
+          kind: details.limited ? "rate-limit" : "auth",
+          resetAt: details.resetAt,
+          remaining: details.remaining,
         },
       );
     }
