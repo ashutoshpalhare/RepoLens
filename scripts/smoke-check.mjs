@@ -137,12 +137,12 @@ const checks = [
   ["does not count an unrelated ecosystem lockfile as reproducibility", () => {
     const dimension = mismatchedLockReport.health.dimensions.find((item) => item.id === "dependencies");
     assert.equal(dimension?.score, 10);
-    assert.match(dimension?.detail ?? "", /without a recognized lockfile/);
+    assert.match(dimension?.detail ?? "", /no recognized lockfile/);
   }],
   ["does not pair manifests with lockfiles from another directory", () => {
     const dimension = crossDirectoryLockReport.health.dimensions.find((item) => item.id === "dependencies");
     assert.equal(dimension?.score, 10);
-    assert.match(dimension?.detail ?? "", /without a recognized lockfile/);
+    assert.match(dimension?.detail ?? "", /no recognized lockfile/);
   }],
     ["recognizes Python, Dart, and .NET dependency manifests", () => {
     const names = extendedEcosystemReport.ecosystems.map((ecosystem) => ecosystem.name);
