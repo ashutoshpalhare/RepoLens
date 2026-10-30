@@ -555,6 +555,7 @@ export function WorkspacePage() {
                     }}
                     cancelled={architectureCancelled}
                     onRestart={() => setArchitectureRun((run) => run + 1)}
+                    onOpenFile={openFile}
                   />
                 ) : centerTab === "code" ? (
                   <CodeViewer

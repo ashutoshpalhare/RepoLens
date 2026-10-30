@@ -278,7 +278,7 @@ const DEP_FILES: Record<string, string> = {
   "bun.lockb": "bun",
 };
 
-const TEST_HINTS = /(test|spec|__tests__|__mocks__)/i;
+const TEST_HINTS = /(^|[\/._-])(?:tests?|specs?|__tests__|__mocks__|e2e)(?=$|[\/._-])/i;
 
 export function analyzeRepo(items: TreeItem[]): RepoInsights {
   const blobs = items.filter((i) => i.type === "blob");
@@ -372,6 +372,8 @@ export type ArchitectureLayer = {
   label: string;
   description: string;
   paths: string[];
+  /** Representative source files for direct navigation from the architecture view. */
+  filePaths: string[];
   files: number;
   bytes: number;
   share: number;
@@ -382,7 +384,7 @@ const LAYER_RULES: { id: string; label: string; description: string; test: RegEx
     id: "ui",
     label: "UI & components",
     description: "Presentational components, pages and layout markup.",
-    test: /(components?|ui|views|pages|screens|layouts?|app\/templates|src\/components)/i,
+    test: /(^|[\/._-])(?:components?|ui|views?|pages?|screens?|layouts?)(?=$|[\/._-])|app\/templates/i,
   },
   {
     id: "client",
@@ -412,7 +414,7 @@ const LAYER_RULES: { id: string; label: string; description: string; test: RegEx
     id: "tests",
     label: "Tests",
     description: "Unit, integration and end-to-end specs.",
-    test: /(test|spec|__tests__|e2e|coverage)/i,
+    test: /(^|[\/._-])(?:tests?|specs?|__tests__|__mocks__|e2e)(?=$|[\/._-])/i,
   },
   {
     id: "infra",
@@ -447,6 +449,7 @@ export function analyzeArchitecture(items: TreeItem[]): ArchitectureReport {
     label: rule.label,
     description: rule.description,
     paths: [],
+    filePaths: [],
     files: 0,
     bytes: 0,
     share: 0,
@@ -465,6 +468,9 @@ export function analyzeArchitecture(items: TreeItem[]): ArchitectureReport {
     layer.bytes += blob.size ?? 0;
     if (layer.paths.length < 6) {
       layer.paths.push(blob.path.split("/").slice(0, 2).join("/") || "(root)");
+    }
+    if (layer.filePaths.length < 8) {
+      layer.filePaths.push(blob.path);
     }
   }
 
@@ -489,13 +495,13 @@ export function analyzeArchitecture(items: TreeItem[]): ArchitectureReport {
   const testLayer = layers.find((l) => l.id === "tests")!;
   const testRatio = totalFiles ? testLayer.files / totalFiles : 0;
   signals.push({
-    label: `Test coverage signal: ${(testRatio * 100).toFixed(1)}% of files`,
+    label: `Test-file ratio: ${(testRatio * 100).toFixed(1)}% of files`,
     detail:
       testRatio === 0
-        ? "No test files detected — hard to refactor safely."
+        ? "No test files were detected in the indexed tree. This is a structural signal, not measured test coverage."
         : testRatio < 0.1
-          ? "Light on tests relative to source size."
-          : "Healthy amount of test files detected.",
+          ? "A small share of indexed files look like tests. This is a structural signal, not measured test coverage."
+          : "A larger share of indexed files look like tests; actual coverage still requires running a test suite.",
     tone: testRatio === 0 ? "warn" : testRatio < 0.1 ? "warn" : "ok",
   });
 

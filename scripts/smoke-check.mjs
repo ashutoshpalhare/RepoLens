@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import ts from "typescript";
 
 const read = (path) => readFile(resolve(process.cwd(), path), "utf8");
-const [html, packageJsonText, viteConfig, router, githubClient, parserSource, homePage, workspacePage, fileExplorer, codeViewer] = await Promise.all([
+const [html, packageJsonText, viteConfig, router, githubClient, parserSource, homePage, workspacePage, fileExplorer, codeViewer, analysisSource, architectureView] = await Promise.all([
   read("dist/index.html"),
   read("package.json"),
   read("vite.config.ts"),
@@ -15,6 +15,8 @@ const [html, packageJsonText, viteConfig, router, githubClient, parserSource, ho
   read("src/routes/r.$owner.$repo.tsx"),
   read("src/components/repolens/FileExplorer.tsx"),
   read("src/components/repolens/CodeViewer.tsx"),
+  read("src/lib/analysis.ts"),
+  read("src/components/repolens/ArchitectureView.tsx"),
 ]);
 const pkg = JSON.parse(packageJsonText);
 const transpiledParser = ts.transpileModule(parserSource, {
@@ -33,6 +35,29 @@ const transpiledGitHub = ts.transpileModule(githubClient, {
 });
 const githubModuleUrl = `data:text/javascript;base64,${Buffer.from(transpiledGitHub.outputText).toString("base64")}`;
 const { fetchRepoMeta, fetchFileContent, GitHubError } = await import(githubModuleUrl);
+
+const analysisRuntimeSource = analysisSource.replace(
+  'import { extOf, type TreeItem } from "./github";',
+  'const extOf = (path) => { const name = path.split("/").pop() ?? ""; const dot = name.lastIndexOf("."); return dot > 0 ? name.slice(dot + 1).toLowerCase() : ""; };',
+);
+assert.notEqual(analysisRuntimeSource, analysisSource, "analysis smoke import shim must be applied");
+const transpiledAnalysis = ts.transpileModule(analysisRuntimeSource, {
+  compilerOptions: {
+    target: ts.ScriptTarget.ES2022,
+    module: ts.ModuleKind.ESNext,
+  },
+});
+const analysisModuleUrl = `data:text/javascript;base64,${Buffer.from(transpiledAnalysis.outputText).toString("base64")}`;
+const { analyzeArchitecture, analyzeRepo } = await import(analysisModuleUrl);
+const architectureFixture = [
+  { path: "build/output.js", type: "blob", size: 120, sha: "1", mode: "100644" },
+  { path: "src/contest.ts", type: "blob", size: 80, sha: "2", mode: "100644" },
+  { path: "src/components/Button.tsx", type: "blob", size: 60, sha: "3", mode: "100644" },
+  { path: "src/foo.test.ts", type: "blob", size: 40, sha: "4", mode: "100644" },
+  { path: "tests/unit.spec.ts", type: "blob", size: 30, sha: "5", mode: "100644" },
+];
+const architectureFixtureReport = analyzeArchitecture(architectureFixture);
+const architectureFixtureInsights = analyzeRepo(architectureFixture);
 
 const checks = [
   ["package identity is RepoLens", () => assert.equal(pkg.name, "repolens")],
@@ -65,6 +90,35 @@ const checks = [
   ["code viewer supports copying the complete text file", () => assert.match(codeViewer, /File contents copied/)],
   ["code viewer identifies empty text files", () => assert.match(codeViewer, /Empty file/)],
   ["partial recursive trees still allow direct file deep links", () => assert.match(workspacePage, /treeQuery\.data\?\.truncated/)],
+  ["architecture analysis retains representative source file paths for drill-down", () => {
+    assert.match(analysisSource, /filePaths:\s*string\[\]/);
+    assert.match(analysisSource, /layer\.filePaths\.length\s*<\s*8/);
+  }],
+  ["architecture heuristics do not mistake build or contest paths for UI or tests", () => {
+    const ui = architectureFixtureReport.layers.find((layer) => layer.id === "ui");
+    const tests = architectureFixtureReport.layers.find((layer) => layer.id === "tests");
+    assert.equal(ui?.files, 1);
+    assert.equal(tests?.files, 2);
+    assert.equal(architectureFixtureInsights.testFiles, 2);
+  }],
+  ["architecture report links representative file paths to the correct layer", () => {
+    const ui = architectureFixtureReport.layers.find((layer) => layer.id === "ui");
+    assert.deepEqual(ui?.filePaths, ["src/components/Button.tsx"]);
+  }],
+  ["architecture test signals describe file ratios rather than claiming coverage", () => {
+    assert.ok(architectureFixtureReport.signals.some((signal) => signal.label.startsWith("Test-file ratio:")));
+    assert.ok(architectureFixtureReport.signals.every((signal) => !signal.label.includes("Test coverage signal")));
+  }],
+  ["architecture view declares hooks before loading and cancelled early returns", () => {
+    const hooks = architectureView.indexOf("useState<string | null>(null)");
+    const loadingReturn = architectureView.indexOf("if (loading)");
+    const cancelledReturn = architectureView.indexOf("if (cancelled)");
+    assert.ok(hooks >= 0 && hooks < loadingReturn && hooks < cancelledReturn);
+  }],
+  ["architecture cards provide accessible direct file navigation", () => {
+    assert.match(architectureView, /onClick=\{\(\) => onOpenFile\(path\)\}/);
+    assert.match(workspacePage, /onOpenFile=\{openFile\}/);
+  }],
   ["directory permalinks use GitHub tree URLs", () => assert.match(githubClient, /type\s*===\s*"tree"\s*\|\|\s*type\s*===\s*"submodule"\s*\?\s*"tree"/)],
   ["home, about, and repository routes are registered", () => {
     assert.match(router, /path:\s*["']\/["']/);

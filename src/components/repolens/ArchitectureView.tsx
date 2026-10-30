@@ -99,6 +99,7 @@ export function ArchitectureView({
   onCancel,
   cancelled,
   onRestart,
+  onOpenFile,
   className,
 }: {
   report: ArchitectureReport | null;
@@ -107,8 +108,12 @@ export function ArchitectureView({
   onCancel?: () => void;
   cancelled?: boolean;
   onRestart?: () => void;
+  onOpenFile: (path: string) => void;
   className?: string;
 }) {
+  const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
+  const [copiedSummary, setCopiedSummary] = useState(false);
+
   if (loading) {
     return (
       <div className={cn("rl-scroll overflow-auto p-6", className)}>
@@ -156,9 +161,6 @@ export function ArchitectureView({
       </div>
     );
   }
-
-  const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
-  const [copiedSummary, setCopiedSummary] = useState(false);
 
   if (!report || report.layers.length === 0) {
     return (
@@ -374,7 +376,7 @@ export function ArchitectureView({
                       />
                     </div>
                     {layer.paths.length ? (
-                      <div className="flex flex-wrap gap-1 pt-1">
+                      <div className="flex flex-wrap gap-1 pt-1" aria-label="Representative directories">
                         {layer.paths.slice(0, 4).map((p) => (
                           <span
                             key={p}
@@ -383,6 +385,25 @@ export function ArchitectureView({
                             {p}
                           </span>
                         ))}
+                      </div>
+                    ) : null}
+                    {layer.filePaths.length ? (
+                      <div className="mt-3 space-y-1.5">
+                        <p className="text-[10px] font-semibold uppercase tracking-wider text-faint">Open representative files</p>
+                        <ul className="space-y-1">
+                          {layer.filePaths.slice(0, 6).map((path) => (
+                            <li key={path}>
+                              <button
+                                type="button"
+                                onClick={() => onOpenFile(path)}
+                                title={`Open ${path}`}
+                                className="block w-full truncate rounded-md px-1.5 py-1 text-left font-mono text-[10px] text-muted transition-colors hover:bg-surface-2 hover:text-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                              >
+                                {path}
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
                       </div>
                     ) : null}
                   </div>
