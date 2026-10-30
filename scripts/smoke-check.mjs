@@ -36,6 +36,29 @@ const transpiledGitHub = ts.transpileModule(githubClient, {
 const githubModuleUrl = `data:text/javascript;base64,${Buffer.from(transpiledGitHub.outputText).toString("base64")}`;
 const { fetchRepoMeta, fetchFileContent, GitHubError } = await import(githubModuleUrl);
 
+const analysisRuntimeSource = analysisSource.replace(
+  'import { extOf, type TreeItem } from "./github";',
+  'const extOf = (path) => { const name = path.split("/").pop() ?? ""; const dot = name.lastIndexOf("."); return dot > 0 ? name.slice(dot + 1).toLowerCase() : ""; };',
+);
+assert.notEqual(analysisRuntimeSource, analysisSource, "analysis smoke import shim must be applied");
+const transpiledAnalysis = ts.transpileModule(analysisRuntimeSource, {
+  compilerOptions: {
+    target: ts.ScriptTarget.ES2022,
+    module: ts.ModuleKind.ESNext,
+  },
+});
+const analysisModuleUrl = `data:text/javascript;base64,${Buffer.from(transpiledAnalysis.outputText).toString("base64")}`;
+const { analyzeArchitecture, analyzeRepo } = await import(analysisModuleUrl);
+const architectureFixture = [
+  { path: "build/output.js", type: "blob", size: 120, sha: "1", mode: "100644" },
+  { path: "src/contest.ts", type: "blob", size: 80, sha: "2", mode: "100644" },
+  { path: "src/components/Button.tsx", type: "blob", size: 60, sha: "3", mode: "100644" },
+  { path: "src/foo.test.ts", type: "blob", size: 40, sha: "4", mode: "100644" },
+  { path: "tests/unit.spec.ts", type: "blob", size: 30, sha: "5", mode: "100644" },
+];
+const architectureFixtureReport = analyzeArchitecture(architectureFixture);
+const architectureFixtureInsights = analyzeRepo(architectureFixture);
+
 const checks = [
   ["package identity is RepoLens", () => assert.equal(pkg.name, "repolens")],
   ["production build has a document title", () => assert.match(html, /<title>[^<]*RepoLens[^<]*<\/title>/i)],
@@ -70,6 +93,21 @@ const checks = [
   ["architecture analysis retains representative source file paths for drill-down", () => {
     assert.match(analysisSource, /filePaths:\s*string\[\]/);
     assert.match(analysisSource, /layer\.filePaths\.length\s*<\s*8/);
+  }],
+  ["architecture heuristics do not mistake build or contest paths for UI or tests", () => {
+    const ui = architectureFixtureReport.layers.find((layer) => layer.id === "ui");
+    const tests = architectureFixtureReport.layers.find((layer) => layer.id === "tests");
+    assert.equal(ui?.files, 1);
+    assert.equal(tests?.files, 2);
+    assert.equal(architectureFixtureInsights.testFiles, 2);
+  }],
+  ["architecture report links representative file paths to the correct layer", () => {
+    const ui = architectureFixtureReport.layers.find((layer) => layer.id === "ui");
+    assert.deepEqual(ui?.filePaths, ["src/components/Button.tsx"]);
+  }],
+  ["architecture test signals describe file ratios rather than claiming coverage", () => {
+    assert.ok(architectureFixtureReport.signals.some((signal) => signal.label.startsWith("Test-file ratio:")));
+    assert.ok(architectureFixtureReport.signals.every((signal) => !signal.label.includes("Test coverage signal")));
   }],
   ["architecture view declares hooks before loading and cancelled early returns", () => {
     const hooks = architectureView.indexOf("useState<string | null>(null)");
