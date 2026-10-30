@@ -335,7 +335,13 @@ function buildRepositoryHealth(
   const hasLicense = paths.some((path) => /^(license|licence)(?:\.|$)/i.test(path.split("/").pop() ?? ""));
   const hasCi = paths.some((path) => path.startsWith(".github/workflows/"));
   const manifests = ecosystems.filter((ecosystem) => ecosystem.manifests.length > 0);
-  const hasLockfile = manifests.some((ecosystem) => ecosystem.lockfiles.length > 0);
+  const hasLockfile = manifests.some((ecosystem) => ecosystem.manifests.some((manifest) => {
+    const manifestDirectory = manifest.includes("/") ? manifest.slice(0, manifest.lastIndexOf("/")) : "";
+    return ecosystem.lockfiles.some((lockfile) => {
+      const lockfileDirectory = lockfile.includes("/") ? lockfile.slice(0, lockfile.lastIndexOf("/")) : "";
+      return manifestDirectory === lockfileDirectory;
+    });
+  }));
   const testRatio = paths.length ? testFiles / paths.length : 0;
   const dimensions = [
     { id:"docs", label:"Project documentation", score:(hasReadme?10:0)+(hasLicense?10:0), detail:`${hasReadme?"README present":"README missing"} · ${hasLicense?"License present":"License missing"}` },
