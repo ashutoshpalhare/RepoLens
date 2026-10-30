@@ -301,7 +301,7 @@ const ECOSYSTEM_RULES: { name: string; manifests: string[]; lockfiles: string[] 
 
 function detectStack(paths: string[]): RepoInsights["stack"] {
   const lower = paths.map((path) => path.toLowerCase());
-  const matching = (...patterns: RegExp[]) => paths.filter((path, index) => patterns.some((pattern) => pattern.test(lower[index])));
+  const matching = (...patterns: RegExp[]) => paths.filter((_, index) => patterns.some((pattern) => pattern.test(lower[index])));
   const stack: RepoInsights["stack"] = [];
   const add = (name: string, category: RepoInsights["stack"][number]["category"], evidence: string[]) => {
     if (evidence.length) stack.push({ name, category, evidence: evidence.slice(0, 3) });
@@ -329,14 +329,13 @@ function detectStack(paths: string[]): RepoInsights["stack"] {
 }
 
 function buildRepositoryHealth(
-  paths: string[], deps: RepoInsights["deps"], testFiles: number, configFiles: number, partial: boolean,
+  paths: string[], ecosystems: RepoInsights["ecosystems"], testFiles: number, configFiles: number, partial: boolean,
 ): RepoInsights["health"] {
   const hasReadme = paths.some((path) => /^readme(?:\.|$)/i.test(path.split("/").pop() ?? ""));
   const hasLicense = paths.some((path) => /^(license|licence)(?:\.|$)/i.test(path.split("/").pop() ?? ""));
   const hasCi = paths.some((path) => path.startsWith(".github/workflows/"));
-  const manifests = deps.filter((dep) => !/lock|\.sum$/i.test(dep.name));
-  const lockNames = new Set(["package-lock.json","pnpm-lock.yaml","yarn.lock","bun.lock","bun.lockb","uv.lock","poetry.lock","Pipfile.lock","Cargo.lock","go.sum","composer.lock","Gemfile.lock","mix.lock","pubspec.lock","deno.lock","gradle.lockfile","packages.lock.json"]);
-  const hasLockfile = paths.some((path) => lockNames.has(path.split("/").pop() ?? ""));
+  const manifests = ecosystems.filter((ecosystem) => ecosystem.manifests.length > 0);
+  const hasLockfile = manifests.some((ecosystem) => ecosystem.lockfiles.length > 0);
   const testRatio = paths.length ? testFiles / paths.length : 0;
   const dimensions = [
     { id:"docs", label:"Project documentation", score:(hasReadme?10:0)+(hasLicense?10:0), detail:`${hasReadme?"README present":"README missing"} · ${hasLicense?"License present":"License missing"}` },
@@ -424,7 +423,7 @@ export function analyzeRepo(items: TreeItem[], options: HealthOptions = {}): Rep
     return { name: ecosystem.name, manifests: matches(ecosystem.manifests), lockfiles: matches(ecosystem.lockfiles) };
   }).filter((ecosystem) => ecosystem.manifests.length || ecosystem.lockfiles.length);
   const stack = detectStack(paths);
-  const health = buildRepositoryHealth(paths, deps, testFiles, configFiles, options.partial ?? false);
+  const health = buildRepositoryHealth(paths, ecosystems, testFiles, configFiles, options.partial ?? false);
 
   return {
     fileCount: blobs.length,
