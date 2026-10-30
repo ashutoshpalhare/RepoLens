@@ -118,6 +118,8 @@ export function InsightsPanel({
           </div>
         </section>
 
+        {loading ? <Skeleton className="h-[260px]" /> : (
+          <>
         {/* ---------------------------------------------------- repository health */}
         <section aria-labelledby="insights-health" className="rounded-xl border border-line bg-surface-2/60 p-3">
           <div className="flex items-start justify-between gap-3">
@@ -197,6 +199,9 @@ export function InsightsPanel({
             ) : null}
           </section>
         ) : null}
+
+          </>
+        )}
 
         {/* --------------------------------------------------------- languages */}
         {insights.languages.length ? (
