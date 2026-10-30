@@ -9,7 +9,6 @@ import {
   GitBranch,
   HardDrive,
   Layers,
-  Package,
   Star,
   ShieldCheck,
   Sparkles,
