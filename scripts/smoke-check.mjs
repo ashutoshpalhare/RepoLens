@@ -66,6 +66,14 @@ const healthFixture = [
 ].map((path, index) => ({ path, type: "blob", size: 40 + index, sha: String(index), mode: "100644" }));
 const healthFixtureReport = analyzeRepo(healthFixture);
 const partialHealthReport = analyzeRepo(healthFixture.slice(0, 3), { partial: true });
+const mismatchedLockFixture = ["package.json", "go.mod", "Cargo.lock"].map((path, index) => ({
+  path, type: "blob", size: 20, sha: String(index), mode: "100644",
+}));
+const extendedEcosystemFixture = ["requirements.txt", "uv.lock", "pubspec.yaml", "pubspec.lock", "Demo.csproj"].map((path, index) => ({
+  path, type: "blob", size: 20, sha: String(index), mode: "100644",
+}));
+const mismatchedLockReport = analyzeRepo(mismatchedLockFixture);
+const extendedEcosystemReport = analyzeRepo(extendedEcosystemFixture);
 
 const checks = [
   ["package identity is RepoLens", () => assert.equal(pkg.name, "repolens")],
@@ -122,7 +130,20 @@ const checks = [
     assert.deepEqual(healthFixtureReport.ecosystems[0].manifests, ["package.json"]);
     assert.deepEqual(healthFixtureReport.ecosystems[0].lockfiles, ["package-lock.json"]);
   }],
-  ["detects frameworks and tooling from explicit config evidence", () => {
+  ["does not count an unrelated ecosystem lockfile as reproducibility", () => {
+    const dimension = mismatchedLockReport.health.dimensions.find((item) => item.id === "dependencies");
+    assert.equal(dimension?.score, 10);
+    assert.match(dimension?.detail ?? "", /without a recognized lockfile/);
+  }],
+  ["recognizes Python, Dart, and .NET dependency manifests", () => {
+    const names = extendedEcosystemReport.ecosystems.map((ecosystem) => ecosystem.name);
+    assert.ok(names.includes("Python"));
+    assert.ok(names.includes("Dart / Flutter"));
+    assert.ok(names.includes(".NET"));
+    assert.equal(extendedEcosystemReport.ecosystems.find((item) => item.name === "Python")?.lockfiles[0], "uv.lock");
+    assert.equal(extendedEcosystemReport.ecosystems.find((item) => item.name === "Dart / Flutter")?.lockfiles[0], "pubspec.lock");
+  }],
+    ["detects frameworks and tooling from explicit config evidence", () => {
     const names = healthFixtureReport.stack.map((item) => item.name);
     assert.ok(names.includes("Next.js"));
     assert.ok(names.includes("Vite"));
