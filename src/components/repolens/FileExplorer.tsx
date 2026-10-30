@@ -75,11 +75,26 @@ export function FileExplorer({
     return out;
   }, [nodes]);
 
-  const matches = useMemo(() => {
+  const allFolders = useMemo(() => {
+    const out: TreeNode[] = [];
+    const walk = (list: TreeNode[]) => {
+      for (const node of list) {
+        if (node.type === "tree") {
+          out.push(node);
+          walk(node.children);
+        }
+      }
+    };
+    walk(nodes);
+    return out;
+  }, [nodes]);
+
+  const filteredMatches = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return null;
-    return allNodes.filter((node) => node.path.toLowerCase().includes(q)).slice(0, 500);
+    return allNodes.filter((node) => node.path.toLowerCase().includes(q));
   }, [query, allNodes]);
+  const matches = filteredMatches?.slice(0, 500) ?? null;
 
   const rows = useMemo(() => {
     if (matches) return matches.map((node) => ({ node, depth: 0 }));
@@ -128,9 +143,8 @@ export function FileExplorer({
   const collapseAll = () => setExpanded(new Set());
 
   const allExpanded =
-    nodes.length > 0 &&
-    allNodes.some((node) => node.path.includes("/")) &&
-    nodes.every((n) => n.type !== "tree" || expanded.has(n.path));
+    allFolders.length > 0 &&
+    allFolders.every((folder) => expanded.has(folder.path));
 
   return (
     <div className={cn("flex h-full min-h-0 flex-col bg-surface", className)}>
@@ -198,7 +212,7 @@ export function FileExplorer({
           />
         ) : (
           <div
-            role="tree"
+            role="list"
             aria-label="Repository files"
             className="relative w-full"
             style={{ height: virtualizer.getTotalSize() }}
@@ -209,9 +223,7 @@ export function FileExplorer({
               return (
                 <div
                   key={row.node.path}
-                  role="treeitem"
-                  aria-expanded={folder ? expanded.has(row.node.path) : undefined}
-                  aria-selected={!folder ? selectedPath === row.node.path : undefined}
+                  role="listitem"
                   className="absolute left-0 top-0 w-full py-px"
                   style={{ transform: `translateY(${virtualRow.start}px)`, height: virtualRow.size }}
                 >
@@ -228,6 +240,7 @@ export function FileExplorer({
                       depth={row.depth}
                       selected={selectedPath === row.node.path}
                       onSelect={onSelect}
+                      showPathContext={Boolean(matches)}
                     />
                   )}
                 </div>
@@ -238,8 +251,13 @@ export function FileExplorer({
       </div>
 
       <div className="flex shrink-0 items-center justify-between gap-2 border-t border-line px-2.5 py-1.5">
-        <span className="font-mono text-[10px] text-faint">
-          {allNodes.length.toLocaleString()} entries
+        <span
+          className="font-mono text-[10px] text-faint"
+          title={matches ? `${filteredMatches?.length ?? matches.length} total matches` : undefined}
+        >
+          {matches
+            ? `${matches.length.toLocaleString()}${filteredMatches && filteredMatches.length > matches.length ? "+" : ""} matches`
+            : `${allNodes.length.toLocaleString()} entries`}
         </span>
         <CopyTreeMenu nodes={nodes} rootName={rootName} compact />
       </div>
@@ -290,12 +308,15 @@ function FileRow({
   depth,
   selected,
   onSelect,
+  showPathContext = false,
 }: {
   node: TreeNode;
   depth: number;
   selected: boolean;
   onSelect: (node: TreeNode) => void;
+  showPathContext?: boolean;
 }) {
+  const directory = node.path.includes("/") ? node.path.slice(0, node.path.lastIndexOf("/")) : ".";
   return (
     <button
       type="button"
@@ -322,6 +343,14 @@ function FileRow({
       <span className={cn("truncate text-xs font-mono", selected ? "text-accent font-medium" : "text-muted group-hover:text-ink")}>
         {node.name}
       </span>
+      {showPathContext ? (
+        <span
+          className={cn("min-w-0 max-w-[45%] truncate font-mono text-[10px] text-faint/80", node.type === "blob" && "ml-auto")}
+          title={node.path}
+        >
+          {directory}
+        </span>
+      ) : null}
       {node.type !== "blob" ? (
         <span className="ml-auto inline-flex shrink-0 items-center gap-1 rounded border border-line-strong/80 bg-surface px-1 py-0.5 font-mono text-[9px] uppercase tracking-wide text-faint">
           {node.type}

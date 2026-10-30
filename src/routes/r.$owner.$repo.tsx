@@ -120,8 +120,14 @@ export function WorkspacePage() {
   });
 
   const selectedItem = treeQuery.data?.items.find((item) => item.path === selectedPath);
-  const selectedMissing = Boolean(selectedPath && treeQuery.data && !selectedItem);
-  const selectedFilePath = selectedItem?.type === "blob" ? selectedPath : null;
+  const selectedMissing = Boolean(
+    selectedPath && treeQuery.data && !selectedItem && !treeQuery.data.truncated,
+  );
+  const selectedFilePath =
+    selectedItem?.type === "blob" ||
+    (Boolean(selectedPath) && !selectedItem && Boolean(treeQuery.data?.truncated))
+      ? selectedPath
+      : null;
   const codePath = selectedFilePath ?? (selectedMissing ? selectedPath : null);
   const selectedTooLarge = Boolean(
     selectedItem?.type === "blob" && selectedItem.size > MAX_RENDER_BYTES,
@@ -134,7 +140,6 @@ export function WorkspacePage() {
       Boolean(selectedFilePath) &&
       Boolean(metaQuery.data) &&
       Boolean(treeQuery.data) &&
-      selectedItem?.type === "blob" &&
       !selectedTooLarge,
   });
 

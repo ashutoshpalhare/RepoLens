@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Check, ChevronRight, Copy, ExternalLink, FileCode2, FileWarning, WrapText } from "lucide-react";
 import { Kbd } from "@/components/ui/primitives";
@@ -52,7 +52,26 @@ export function CodeViewer({
 }: CodeViewerProps) {
   const [wrap, setWrap] = useState(false);
   const [visible, setVisible] = useState(CHUNK);
-  const [copiedPath, setCopiedPath] = useState(false);
+  const [copiedAction, setCopiedAction] = useState<"path" | "content" | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const copiedTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    setVisible(CHUNK);
+    setCopiedAction(null);
+    if (copiedTimerRef.current !== null) window.clearTimeout(copiedTimerRef.current);
+    scrollRef.current?.scrollTo({ top: 0 });
+  }, [owner, repo, branch, path]);
+
+  useEffect(() => () => {
+    if (copiedTimerRef.current !== null) window.clearTimeout(copiedTimerRef.current);
+  }, []);
+
+  const markCopied = (action: "path" | "content") => {
+    setCopiedAction(action);
+    if (copiedTimerRef.current !== null) window.clearTimeout(copiedTimerRef.current);
+    copiedTimerRef.current = window.setTimeout(() => setCopiedAction(null), 1800);
+  };
 
   // Plain lines render immediately; Shiki tokens replace them once the lazy highlighter is ready.
   const lines = useMemo(() => {
@@ -80,9 +99,14 @@ export function CodeViewer({
 
   const handleCopyPath = async () => {
     if (!path) return;
-    await copyText(path, "File path copied");
-    setCopiedPath(true);
-    setTimeout(() => setCopiedPath(false), 2000);
+    const copied = await copyText(path, "File path copied");
+    if (copied) markCopied("path");
+  };
+
+  const handleCopyContents = async () => {
+    if (!file || file.binary || file.oversized) return;
+    const copied = await copyText(file.text, "File contents copied");
+    if (copied) markCopied("content");
   };
 
   if (!path) {
@@ -177,9 +201,21 @@ export function CodeViewer({
             title="Copy file path (y)"
             className="flex h-7 items-center gap-1.5 rounded-md border border-line-strong/80 bg-surface-2/60 px-2 text-[11px] text-muted transition-colors duration-150 hover:border-accent hover:text-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
           >
-            {copiedPath ? <Check className="h-3 w-3 text-ok" /> : <Copy className="h-3 w-3" />}
-            <span className="hidden sm:inline">{copiedPath ? "Copied" : "Path"}</span>
+            {copiedAction === "path" ? <Check className="h-3 w-3 text-ok" /> : <Copy className="h-3 w-3" />}
+            <span className="hidden sm:inline">{copiedAction === "path" ? "Copied" : "Path"}</span>
           </button>
+          {file && !file.binary && !file.oversized ? (
+            <button
+              type="button"
+              onClick={handleCopyContents}
+              aria-label="Copy file contents"
+              title="Copy entire file contents"
+              className="flex h-7 items-center gap-1.5 rounded-md border border-line-strong/80 bg-surface-2/60 px-2 text-[11px] text-muted transition-colors duration-150 hover:border-accent hover:text-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            >
+              {copiedAction === "content" ? <Check className="h-3 w-3 text-ok" /> : <Copy className="h-3 w-3" />}
+              <span className="hidden sm:inline">{copiedAction === "content" ? "Copied" : "Code"}</span>
+            </button>
+          ) : null}
           <a
             href={entryType === "submodule" || entryType === "symlink"
               ? treeEntryUrl(owner, repo, branch, path, entryType)
@@ -209,7 +245,7 @@ export function CodeViewer({
         </div>
       </header>
 
-      <div className="rl-scroll min-h-0 flex-1 overflow-auto">
+      <div ref={scrollRef} className="rl-scroll min-h-0 flex-1 overflow-auto">
         <AnimatePresence mode="wait">
           <motion.div
             key={path}
@@ -265,6 +301,8 @@ export function CodeViewer({
                 title="Binary or unsupported file"
                 detail={`${formatBytes(file.size)} — open it on GitHub to preview.`}
               />
+            ) : file.text.length === 0 ? (
+              <EmptyState title="Empty file" detail="This file contains no text." />
             ) : (
               <table className="rl-code w-full border-collapse font-mono text-[12.5px] leading-[1.65]">
                 <tbody>
