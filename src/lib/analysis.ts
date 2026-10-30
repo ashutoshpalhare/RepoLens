@@ -372,6 +372,8 @@ export type ArchitectureLayer = {
   label: string;
   description: string;
   paths: string[];
+  /** Representative source files for direct navigation from the architecture view. */
+  filePaths: string[];
   files: number;
   bytes: number;
   share: number;
@@ -447,6 +449,7 @@ export function analyzeArchitecture(items: TreeItem[]): ArchitectureReport {
     label: rule.label,
     description: rule.description,
     paths: [],
+    filePaths: [],
     files: 0,
     bytes: 0,
     share: 0,
@@ -465,6 +468,9 @@ export function analyzeArchitecture(items: TreeItem[]): ArchitectureReport {
     layer.bytes += blob.size ?? 0;
     if (layer.paths.length < 6) {
       layer.paths.push(blob.path.split("/").slice(0, 2).join("/") || "(root)");
+    }
+    if (layer.filePaths.length < 8) {
+      layer.filePaths.push(blob.path);
     }
   }
 
