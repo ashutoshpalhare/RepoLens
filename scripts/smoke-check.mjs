@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import ts from "typescript";
 
 const read = (path) => readFile(resolve(process.cwd(), path), "utf8");
-const [html, packageJsonText, viteConfig, router, githubClient, parserSource, homePage, workspacePage, fileExplorer] = await Promise.all([
+const [html, packageJsonText, viteConfig, router, githubClient, parserSource, homePage, workspacePage, fileExplorer, codeViewer] = await Promise.all([
   read("dist/index.html"),
   read("package.json"),
   read("vite.config.ts"),
@@ -14,6 +14,7 @@ const [html, packageJsonText, viteConfig, router, githubClient, parserSource, ho
   read("src/routes/index.tsx"),
   read("src/routes/r.$owner.$repo.tsx"),
   read("src/components/repolens/FileExplorer.tsx"),
+  read("src/components/repolens/CodeViewer.tsx"),
 ]);
 const pkg = JSON.parse(packageJsonText);
 const transpiledParser = ts.transpileModule(parserSource, {
@@ -55,8 +56,15 @@ const checks = [
     assert.match(homePage, /search:\s*parsed\.ref\s*\?\s*\{\s*ref:\s*parsed\.ref\s*\}\s*:\s*\{\s*\}/);
   }],
   ["workspace tree queries use the selected ref", () => assert.match(workspacePage, /queryKey:\s*\[\s*"repo-tree",\s*owner,\s*repo,\s*ref\s*\]/)],
-  ["directory deep links are not fetched as source files", () => assert.match(workspacePage, /selectedFilePath\s*=\s*selectedItem\?\.type\s*===\s*"blob"\s*\?\s*selectedPath\s*:\s*null/)],
+  ["only file blobs or unresolved paths in truncated trees are fetched as source files", () => assert.match(workspacePage, /selectedItem\?\.type\s*===\s*"blob"\s*\|\|/)],
   ["file explorer expands ancestors for deep links", () => assert.match(fileExplorer, /selectedPath\.startsWith\(`\$\{node\.path\}\/`\)/)],
+  ["file explorer checks every folder before showing collapse-all", () => assert.match(fileExplorer, /allFolders\.every\(\(folder\) => expanded\.has\(folder\.path\)\)/)],
+  ["filtered file matches include their parent directory context", () => assert.match(fileExplorer, /showPathContext/)],
+  ["file explorer exposes the filtered match count", () => assert.match(fileExplorer, /matches\.length\.toLocaleString\(\)/)],
+  ["code viewer resets its line window and scroll position when the file changes", () => assert.match(codeViewer, /setVisible\(CHUNK\)[\s\S]*scrollRef\.current\?\.scrollTo/)],
+  ["code viewer supports copying the complete text file", () => assert.match(codeViewer, /File contents copied/)],
+  ["code viewer identifies empty text files", () => assert.match(codeViewer, /Empty file/)],
+  ["partial recursive trees still allow direct file deep links", () => assert.match(workspacePage, /treeQuery\.data\?\.truncated/)],
   ["directory permalinks use GitHub tree URLs", () => assert.match(githubClient, /type\s*===\s*"tree"\s*\|\|\s*type\s*===\s*"submodule"\s*\?\s*"tree"/)],
   ["home, about, and repository routes are registered", () => {
     assert.match(router, /path:\s*["']\/["']/);
