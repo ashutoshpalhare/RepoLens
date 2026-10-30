@@ -56,7 +56,7 @@ const checks = [
     assert.match(homePage, /search:\s*parsed\.ref\s*\?\s*\{\s*ref:\s*parsed\.ref\s*\}\s*:\s*\{\s*\}/);
   }],
   ["workspace tree queries use the selected ref", () => assert.match(workspacePage, /queryKey:\s*\[\s*"repo-tree",\s*owner,\s*repo,\s*ref\s*\]/)],
-  ["directory deep links are not fetched as source files", () => assert.match(workspacePage, /selectedFilePath\s*=\s*selectedItem\?\.type\s*===\s*"blob"\s*\?\s*selectedPath\s*:\s*null/)],
+  ["only file blobs or unresolved paths in truncated trees are fetched as source files", () => assert.match(workspacePage, /selectedItem\?\.type\s*===\s*"blob"\s*\|\|/)],
   ["file explorer expands ancestors for deep links", () => assert.match(fileExplorer, /selectedPath\.startsWith\(`\$\{node\.path\}\/`\)/)],
   ["file explorer checks every folder before showing collapse-all", () => assert.match(fileExplorer, /allFolders\.every\(\(folder\) => expanded\.has\(folder\.path\)\)/)],
   ["filtered file matches include their parent directory context", () => assert.match(fileExplorer, /showPathContext/)],
