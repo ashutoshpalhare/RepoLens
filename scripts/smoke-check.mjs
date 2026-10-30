@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import ts from "typescript";
 
 const read = (path) => readFile(resolve(process.cwd(), path), "utf8");
-const [html, packageJsonText, viteConfig, router, githubClient, parserSource, homePage, workspacePage, fileExplorer, codeViewer] = await Promise.all([
+const [html, packageJsonText, viteConfig, router, githubClient, parserSource, homePage, workspacePage, fileExplorer, codeViewer, analysisSource, architectureView] = await Promise.all([
   read("dist/index.html"),
   read("package.json"),
   read("vite.config.ts"),
@@ -15,6 +15,8 @@ const [html, packageJsonText, viteConfig, router, githubClient, parserSource, ho
   read("src/routes/r.$owner.$repo.tsx"),
   read("src/components/repolens/FileExplorer.tsx"),
   read("src/components/repolens/CodeViewer.tsx"),
+  read("src/lib/analysis.ts"),
+  read("src/components/repolens/ArchitectureView.tsx"),
 ]);
 const pkg = JSON.parse(packageJsonText);
 const transpiledParser = ts.transpileModule(parserSource, {
@@ -65,6 +67,20 @@ const checks = [
   ["code viewer supports copying the complete text file", () => assert.match(codeViewer, /File contents copied/)],
   ["code viewer identifies empty text files", () => assert.match(codeViewer, /Empty file/)],
   ["partial recursive trees still allow direct file deep links", () => assert.match(workspacePage, /treeQuery\.data\?\.truncated/)],
+  ["architecture analysis retains representative source file paths for drill-down", () => {
+    assert.match(analysisSource, /filePaths:\s*string\[\]/);
+    assert.match(analysisSource, /layer\.filePaths\.length\s*<\s*8/);
+  }],
+  ["architecture view declares hooks before loading and cancelled early returns", () => {
+    const hooks = architectureView.indexOf("useState<string | null>(null)");
+    const loadingReturn = architectureView.indexOf("if (loading)");
+    const cancelledReturn = architectureView.indexOf("if (cancelled)");
+    assert.ok(hooks >= 0 && hooks < loadingReturn && hooks < cancelledReturn);
+  }],
+  ["architecture cards provide accessible direct file navigation", () => {
+    assert.match(architectureView, /onClick=\{\(\) => onOpenFile\(path\)\}/);
+    assert.match(workspacePage, /onOpenFile=\{openFile\}/);
+  }],
   ["directory permalinks use GitHub tree URLs", () => assert.match(githubClient, /type\s*===\s*"tree"\s*\|\|\s*type\s*===\s*"submodule"\s*\?\s*"tree"/)],
   ["home, about, and repository routes are registered", () => {
     assert.match(router, /path:\s*["']\/["']/);
