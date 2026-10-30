@@ -74,6 +74,10 @@ const extendedEcosystemFixture = ["requirements.txt", "uv.lock", "pubspec.yaml",
 }));
 const mismatchedLockReport = analyzeRepo(mismatchedLockFixture);
 const extendedEcosystemReport = analyzeRepo(extendedEcosystemFixture);
+const crossDirectoryLockReport = analyzeRepo([
+  { path: "app/package.json", type: "blob", size: 20, sha: "p", mode: "100644" },
+  { path: "package-lock.json", type: "blob", size: 20, sha: "l", mode: "100644" },
+]);
 
 const checks = [
   ["package identity is RepoLens", () => assert.equal(pkg.name, "repolens")],
@@ -135,7 +139,12 @@ const checks = [
     assert.equal(dimension?.score, 10);
     assert.match(dimension?.detail ?? "", /without a recognized lockfile/);
   }],
-  ["recognizes Python, Dart, and .NET dependency manifests", () => {
+  ["does not pair manifests with lockfiles from another directory", () => {
+    const dimension = crossDirectoryLockReport.health.dimensions.find((item) => item.id === "dependencies");
+    assert.equal(dimension?.score, 10);
+    assert.match(dimension?.detail ?? "", /without a recognized lockfile/);
+  }],
+    ["recognizes Python, Dart, and .NET dependency manifests", () => {
     const names = extendedEcosystemReport.ecosystems.map((ecosystem) => ecosystem.name);
     assert.ok(names.includes("Python"));
     assert.ok(names.includes("Dart / Flutter"));
