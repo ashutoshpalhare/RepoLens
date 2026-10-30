@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import ts from "typescript";
 
 const read = (path) => readFile(resolve(process.cwd(), path), "utf8");
-const [html, packageJsonText, viteConfig, router, githubClient, parserSource, homePage, workspacePage, fileExplorer, codeViewer, analysisSource, architectureView] = await Promise.all([
+const [html, packageJsonText, viteConfig, router, githubClient, parserSource, homePage, workspacePage, fileExplorer, codeViewer, analysisSource, architectureView, insightsPanel] = await Promise.all([
   read("dist/index.html"),
   read("package.json"),
   read("vite.config.ts"),
@@ -17,6 +17,7 @@ const [html, packageJsonText, viteConfig, router, githubClient, parserSource, ho
   read("src/components/repolens/CodeViewer.tsx"),
   read("src/lib/analysis.ts"),
   read("src/components/repolens/ArchitectureView.tsx"),
+  read("src/components/repolens/InsightsPanel.tsx"),
 ]);
 const pkg = JSON.parse(packageJsonText);
 const transpiledParser = ts.transpileModule(parserSource, {
@@ -58,6 +59,25 @@ const architectureFixture = [
 ];
 const architectureFixtureReport = analyzeArchitecture(architectureFixture);
 const architectureFixtureInsights = analyzeRepo(architectureFixture);
+const healthFixture = [
+  "README.md", "LICENSE", "package.json", "package-lock.json", "vite.config.ts",
+  "tsconfig.json", ".github/workflows/ci.yml", "src/app.test.ts", "next.config.ts",
+  "vitest.config.ts", "eslint.config.js", "Dockerfile",
+].map((path, index) => ({ path, type: "blob", size: 40 + index, sha: String(index), mode: "100644" }));
+const healthFixtureReport = analyzeRepo(healthFixture);
+const partialHealthReport = analyzeRepo(healthFixture.slice(0, 3), { partial: true });
+const mismatchedLockFixture = ["package.json", "go.mod", "Cargo.lock"].map((path, index) => ({
+  path, type: "blob", size: 20, sha: String(index), mode: "100644",
+}));
+const extendedEcosystemFixture = ["requirements.txt", "uv.lock", "pubspec.yaml", "pubspec.lock", "Demo.csproj"].map((path, index) => ({
+  path, type: "blob", size: 20, sha: String(index), mode: "100644",
+}));
+const mismatchedLockReport = analyzeRepo(mismatchedLockFixture);
+const extendedEcosystemReport = analyzeRepo(extendedEcosystemFixture);
+const crossDirectoryLockReport = analyzeRepo([
+  { path: "app/package.json", type: "blob", size: 20, sha: "p", mode: "100644" },
+  { path: "package-lock.json", type: "blob", size: 20, sha: "l", mode: "100644" },
+]);
 
 const checks = [
   ["package identity is RepoLens", () => assert.equal(pkg.name, "repolens")],
@@ -109,7 +129,61 @@ const checks = [
     assert.ok(architectureFixtureReport.signals.some((signal) => signal.label.startsWith("Test-file ratio:")));
     assert.ok(architectureFixtureReport.signals.every((signal) => !signal.label.includes("Test coverage signal")));
   }],
-  ["architecture view declares hooks before loading and cancelled early returns", () => {
+  ["detects dependency ecosystems from manifests and lockfiles", () => {
+    assert.deepEqual(healthFixtureReport.ecosystems.map((ecosystem) => ecosystem.name), ["JavaScript / TypeScript"]);
+    assert.deepEqual(healthFixtureReport.ecosystems[0].manifests, ["package.json"]);
+    assert.deepEqual(healthFixtureReport.ecosystems[0].lockfiles, ["package-lock.json"]);
+  }],
+  ["does not count an unrelated ecosystem lockfile as reproducibility", () => {
+    const dimension = mismatchedLockReport.health.dimensions.find((item) => item.id === "dependencies");
+    assert.equal(dimension?.score, 10);
+    assert.match(dimension?.detail ?? "", /no recognized lockfile/);
+  }],
+  ["does not pair manifests with lockfiles from another directory", () => {
+    const dimension = crossDirectoryLockReport.health.dimensions.find((item) => item.id === "dependencies");
+    assert.equal(dimension?.score, 10);
+    assert.match(dimension?.detail ?? "", /no recognized lockfile/);
+  }],
+    ["recognizes Python, Dart, and .NET dependency manifests", () => {
+    const names = extendedEcosystemReport.ecosystems.map((ecosystem) => ecosystem.name);
+    assert.ok(names.includes("Python"));
+    assert.ok(names.includes("Dart / Flutter"));
+    assert.ok(names.includes(".NET"));
+    assert.equal(extendedEcosystemReport.ecosystems.find((item) => item.name === "Python")?.lockfiles[0], "uv.lock");
+    assert.equal(extendedEcosystemReport.ecosystems.find((item) => item.name === "Dart / Flutter")?.lockfiles[0], "pubspec.lock");
+  }],
+    ["detects frameworks and tooling from explicit config evidence", () => {
+    const names = healthFixtureReport.stack.map((item) => item.name);
+    assert.ok(names.includes("Next.js"));
+    assert.ok(names.includes("Vite"));
+    assert.ok(names.includes("Vitest"));
+    assert.ok(names.includes("ESLint"));
+    assert.ok(names.includes("Docker"));
+    assert.ok(names.includes("GitHub Actions"));
+  }],
+  ["repository health score is deterministic and explainable", () => {
+    assert.equal(healthFixtureReport.health.score, 100);
+    assert.equal(healthFixtureReport.health.grade, "Strong");
+    assert.equal(healthFixtureReport.health.dimensions.length, 5);
+    assert.equal(healthFixtureReport.health.recommendations.length, 0);
+  }],
+  ["partial repository scans explicitly mark health as partial", () => {
+    assert.equal(partialHealthReport.health.partial, true);
+    assert.ok(partialHealthReport.health.recommendations.length > 0);
+  }],
+  ["health recommendations do not claim measured test coverage", () => {
+    const sparse = analyzeRepo([{ path: "src/index.ts", type: "blob", size: 20, sha: "s", mode: "100644" }]);
+    assert.ok(sparse.health.recommendations.some((item) => item.title === "Add a test suite"));
+    assert.match(sparse.health.dimensions.find((item) => item.id === "tests")?.detail ?? "", /coverage are not measured/);
+  }],
+  ["insights panel displays health, stack detection, and partial-tree caveat", () => {
+    assert.match(architectureView, /Architecture Blueprint/);
+    assert.match(workspacePage, /partial: Boolean\(treeQuery\.data\?\.truncated\)/);
+    assert.match(insightsPanel, /Repository health/);
+    assert.match(insightsPanel, /Stack & ecosystem/);
+    assert.match(insightsPanel, /Partial tree/);
+  }],
+    ["architecture view declares hooks before loading and cancelled early returns", () => {
     const hooks = architectureView.indexOf("useState<string | null>(null)");
     const loadingReturn = architectureView.indexOf("if (loading)");
     const cancelledReturn = architectureView.indexOf("if (cancelled)");

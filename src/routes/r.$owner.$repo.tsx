@@ -150,7 +150,7 @@ export function WorkspacePage() {
   const deferredItems = useDeferredValue(items);
   const analysing = items.length !== deferredItems.length;
   const nodes = useMemo(() => buildTree(deferredItems), [deferredItems]);
-  const insights = useMemo(() => analyzeRepo(deferredItems), [deferredItems]);
+  const insights = useMemo(() => analyzeRepo(deferredItems, { partial: Boolean(treeQuery.data?.truncated) }), [deferredItems, treeQuery.data?.truncated]);
   const allPaths = useMemo(
     () => deferredItems.filter((i) => i.type === "blob").map((i) => i.path),
     [deferredItems],

@@ -254,6 +254,9 @@ export type RepoInsights = {
   hasCi: boolean;
   deps: { name: string; path: string; kind: string }[];
   entryPoints: string[];
+  ecosystems: { name: string; manifests: string[]; lockfiles: string[] }[];
+  stack: { name: string; category: "framework" | "build" | "quality" | "runtime" | "deployment"; evidence: string[] }[];
+  health: { score: number; grade: "Strong" | "Promising" | "Needs attention" | "Limited signals"; partial: boolean; dimensions: { id: string; label: string; score: number; detail: string }[]; recommendations: { title: string; detail: string; priority: "high" | "medium" }[] };
 };
 
 const DEP_FILES: Record<string, string> = {
@@ -280,7 +283,85 @@ const DEP_FILES: Record<string, string> = {
 
 const TEST_HINTS = /(^|[\/._-])(?:tests?|specs?|__tests__|__mocks__|e2e)(?=$|[\/._-])/i;
 
-export function analyzeRepo(items: TreeItem[]): RepoInsights {
+type HealthOptions = { partial?: boolean };
+
+const ECOSYSTEM_RULES: { name: string; manifests: string[]; lockfiles: string[] }[] = [
+  { name: "JavaScript / TypeScript", manifests: ["package.json"], lockfiles: ["package-lock.json", "pnpm-lock.yaml", "yarn.lock", "bun.lock", "bun.lockb"] },
+  { name: "Python", manifests: ["pyproject.toml", "requirements.txt", "Pipfile", "setup.py"], lockfiles: ["uv.lock", "poetry.lock", "Pipfile.lock"] },
+  { name: "Rust", manifests: ["Cargo.toml"], lockfiles: ["Cargo.lock"] },
+  { name: "Go", manifests: ["go.mod"], lockfiles: ["go.sum"] },
+  { name: "PHP", manifests: ["composer.json"], lockfiles: ["composer.lock"] },
+  { name: "Ruby", manifests: ["Gemfile"], lockfiles: ["Gemfile.lock"] },
+  { name: "Java / JVM", manifests: ["pom.xml", "build.gradle", "build.gradle.kts"], lockfiles: ["gradle.lockfile"] },
+  { name: ".NET", manifests: ["*.csproj", "*.fsproj", "*.sln"], lockfiles: ["packages.lock.json"] },
+  { name: "Dart / Flutter", manifests: ["pubspec.yaml"], lockfiles: ["pubspec.lock"] },
+  { name: "Elixir", manifests: ["mix.exs"], lockfiles: ["mix.lock"] },
+  { name: "Deno", manifests: ["deno.json", "deno.jsonc"], lockfiles: ["deno.lock"] },
+];
+
+function detectStack(paths: string[]): RepoInsights["stack"] {
+  const lower = paths.map((path) => path.toLowerCase());
+  const matching = (...patterns: RegExp[]) => paths.filter((_, index) => patterns.some((pattern) => pattern.test(lower[index])));
+  const stack: RepoInsights["stack"] = [];
+  const add = (name: string, category: RepoInsights["stack"][number]["category"], evidence: string[]) => {
+    if (evidence.length) stack.push({ name, category, evidence: evidence.slice(0, 3) });
+  };
+  add("Next.js", "framework", matching(/(^|\/)next\.config\./, /(^|\/)next-env\.d\.ts$/));
+  add("Nuxt", "framework", matching(/(^|\/)nuxt\.config\./));
+  add("Angular", "framework", matching(/(^|\/)angular\.json$/));
+  add("SvelteKit / Svelte", "framework", matching(/(^|\/)svelte\.config\./, /(^|\/)src\/routes\/\+page\./));
+  add("Astro", "framework", matching(/(^|\/)astro\.config\./));
+  add("Remix", "framework", matching(/(^|\/)remix\.config\./));
+  add("Vite", "build", matching(/(^|\/)vite\.config\./));
+  add("Webpack", "build", matching(/(^|\/)webpack\.config\./));
+  add("Turborepo", "build", matching(/(^|\/)turbo\.json$/));
+  add("ESLint", "quality", matching(/(^|\/)\.eslintrc/, /(^|\/)eslint\.config\./));
+  add("Prettier", "quality", matching(/(^|\/)\.prettierrc/, /(^|\/)prettier\.config\./));
+  add("Vitest", "quality", matching(/(^|\/)vitest\.config\./));
+  add("Jest", "quality", matching(/(^|\/)jest\.config\./));
+  add("Playwright", "quality", matching(/(^|\/)playwright\.config\./));
+  add("Cypress", "quality", matching(/(^|\/)cypress\.config\./));
+  add("Docker", "deployment", matching(/(^|\/)dockerfile$/, /(^|\/)docker-compose\./, /(^|\/)compose\.ya?ml$/));
+  add("GitHub Actions", "deployment", matching(/^\.github\/workflows\/.+\.ya?ml$/));
+  add("TypeScript", "runtime", matching(/(^|\/)tsconfig(?:\.[^/]*)?\.json$/));
+  add("Node.js", "runtime", matching(/(^|\/)\.nvmrc$/, /(^|\/)\.node-version$/));
+  return stack;
+}
+
+function buildRepositoryHealth(
+  paths: string[], ecosystems: RepoInsights["ecosystems"], testFiles: number, configFiles: number, partial: boolean,
+): RepoInsights["health"] {
+  const hasReadme = paths.some((path) => /^readme(?:\.|$)/i.test(path.split("/").pop() ?? ""));
+  const hasLicense = paths.some((path) => /^(license|licence)(?:\.|$)/i.test(path.split("/").pop() ?? ""));
+  const hasCi = paths.some((path) => path.startsWith(".github/workflows/"));
+  const manifests = ecosystems.filter((ecosystem) => ecosystem.manifests.length > 0);
+  const hasLockfile = manifests.some((ecosystem) => ecosystem.manifests.some((manifest) => {
+    const manifestDirectory = manifest.includes("/") ? manifest.slice(0, manifest.lastIndexOf("/")) : "";
+    return ecosystem.lockfiles.some((lockfile) => {
+      const lockfileDirectory = lockfile.includes("/") ? lockfile.slice(0, lockfile.lastIndexOf("/")) : "";
+      return manifestDirectory === lockfileDirectory;
+    });
+  }));
+  const testRatio = paths.length ? testFiles / paths.length : 0;
+  const dimensions = [
+    { id:"docs", label:"Project documentation", score:(hasReadme?10:0)+(hasLicense?10:0), detail:`${hasReadme?"README present":"README missing"} · ${hasLicense?"License present":"License missing"}` },
+    { id:"tests", label:"Test structure", score:testFiles>0?(testRatio>=0.05?20:14):0, detail:testFiles?`${testFiles} test-like files (${(testRatio*100).toFixed(1)}% of indexed files)`:"No test-like files detected; execution and coverage are not measured" },
+    { id:"automation", label:"Automation", score:hasCi?20:0, detail:hasCi?"GitHub Actions workflow detected":"No GitHub Actions workflow detected" },
+    { id:"dependencies", label:"Dependency reproducibility", score:manifests.length?(hasLockfile?20:10):10, detail:manifests.length?(hasLockfile?"Manifest and lockfile detected":"Manifest found, but no recognized lockfile"):"No dependency manifest detected; this may be intentional" },
+    { id:"configuration", label:"Project configuration", score:configFiles>0?20:0, detail:configFiles?`${configFiles} configuration files detected`:"No recognized configuration files detected" },
+  ];
+  const score=Math.round(dimensions.reduce((sum,item)=>sum+item.score,0));
+  const recommendations: RepoInsights["health"]["recommendations"]=[];
+  if(!hasReadme) recommendations.push({title:"Add a README",detail:"Document the project purpose, setup steps, usage, and key architecture.",priority:"high"});
+  if(!testFiles) recommendations.push({title:"Add a test suite",detail:"Start with tests for core logic and critical user flows; this scan does not measure coverage.",priority:"high"});
+  if(!hasCi) recommendations.push({title:"Add continuous integration",detail:"Run type checks, tests, and production builds on every pull request.",priority:"medium"});
+  if(manifests.length&&!hasLockfile) recommendations.push({title:"Commit a dependency lockfile",detail:"Pin the resolved dependency graph so installs are more reproducible.",priority:"medium"});
+  if(!hasLicense) recommendations.push({title:"Add a license",detail:"Make reuse and contribution permissions explicit.",priority:"medium"});
+  if(!configFiles) recommendations.push({title:"Review project configuration",detail:"Commit essential runtime, build, or tooling configuration where applicable.",priority:"medium"});
+  return {score,grade:score>=80?"Strong":score>=60?"Promising":score>=35?"Needs attention":"Limited signals",partial,dimensions,recommendations};
+}
+
+export function analyzeRepo(items: TreeItem[], options: HealthOptions = {}): RepoInsights {
   const blobs = items.filter((i) => i.type === "blob");
   const dirs = items.filter((i) => i.type === "tree");
 
@@ -338,6 +419,17 @@ export function analyzeRepo(items: TreeItem[]): RepoInsights {
   }
 
   const names = new Set(blobs.map((b) => b.path));
+  const testFiles = blobs.filter((b) => TEST_HINTS.test(b.path)).length;
+  const configFiles = blobs.filter((b) => /^(config|settings|\.env|tsconfig|vite\.config|next\.config|tailwind\.config)/i.test(b.path.split("/").pop() ?? "")).length;
+  const paths = blobs.map((blob) => blob.path);
+  const ecosystems = ECOSYSTEM_RULES.map((ecosystem) => {
+    const matches = (patterns: string[]) => blobs.filter((blob) => patterns.some((pattern) => pattern.startsWith("*.")
+      ? blob.path.split("/").pop()?.toLowerCase().endsWith(pattern.slice(1).toLowerCase())
+      : blob.path.split("/").pop()?.toLowerCase() === pattern.toLowerCase())).map((blob) => blob.path);
+    return { name: ecosystem.name, manifests: matches(ecosystem.manifests), lockfiles: matches(ecosystem.lockfiles) };
+  }).filter((ecosystem) => ecosystem.manifests.length || ecosystem.lockfiles.length);
+  const stack = detectStack(paths);
+  const health = buildRepositoryHealth(paths, ecosystems, testFiles, configFiles, options.partial ?? false);
 
   return {
     fileCount: blobs.length,
@@ -348,14 +440,17 @@ export function analyzeRepo(items: TreeItem[]): RepoInsights {
     languages,
     largestFiles,
     topDirs,
-    testFiles: blobs.filter((b) => TEST_HINTS.test(b.path)).length,
-    configFiles: blobs.filter((b) => /^(config|settings|\.env|tsconfig|vite\.config|next\.config|tailwind\.config)/i.test(b.path.split("/").pop() ?? "")).length,
+    testFiles,
+    configFiles,
     scriptFiles: blobs.filter((b) => /^(scripts?|tools?)\//i.test(b.path)).length,
     hasReadme:
       names.has("README.md") || blobs.some((b) => /^readme/i.test(b.path.split("/").pop() ?? "")),
     hasLicense: names.has("LICENSE") || names.has("LICENSE.md") || names.has("LICENSE.txt"),
     hasCi: blobs.some((b) => b.path.startsWith(".github/workflows/")),
     deps,
+    ecosystems,
+    stack,
+    health,
     entryPoints: blobs
       .filter((b) =>
         /^(src\/)?(main|index|app|server|cli)\.(tsx?|jsx?|py|go|rs)$/.test(b.path),

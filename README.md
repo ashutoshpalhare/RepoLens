@@ -10,11 +10,29 @@ RepoLens is a fast, client-side GitHub repository explorer. Paste a public GitHu
 - Virtualized repository file tree with filtering and quick navigation
 - Syntax-highlighted code viewer
 - Repository metadata, language and file insights
-- Client-side architecture analysis
+- Client-side architecture analysis with representative file drill-down
+- Dependency ecosystem and framework/tooling detection from repository manifests and config paths
+- Explainable repository health score with dimension breakdown and actionable recommendations
 - Keyboard shortcuts and quick-open
 - Optional personal GitHub token stored locally in the browser to raise API rate limits
 - Dark and light themes
 - Responsive layout and reduced-motion support
+
+## Repository intelligence
+
+The Insights panel includes a structural health score (0–100), detected dependency ecosystems, and framework/tooling signals. The score is split across five equally weighted dimensions:
+
+| Dimension | What is checked |
+| --- | --- |
+| Project documentation | README and license files |
+| Test structure | Test-like file paths (not test execution or coverage) |
+| Automation | GitHub Actions workflow files |
+| Dependency reproducibility | Recognized manifests paired with ecosystem-specific lockfiles |
+| Project configuration | Recognized configuration files |
+
+The score is a lightweight heuristic to guide repository review. It is **not** a security audit, maintainability metric, test-coverage report, or certification. Detection uses tracked filenames and config paths; dependency versions and package contents are not parsed. Some repositories intentionally omit tests, licenses, CI, or dependency manifests.
+
+When GitHub truncates a very large recursive tree, RepoLens labels the health result as **partial** because unreturned paths can affect the score and detected stack. See [the repository intelligence notes](docs/day-5-intelligence.md) for detection details and limitations.
 
 ## Privacy and data flow
 
