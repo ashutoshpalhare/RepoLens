@@ -5,19 +5,39 @@ import { toast } from "sonner";
 
 export async function copyText(text: string, label = "Copied"): Promise<boolean> {
   try {
+    // Clipboard API may exist but reject because of permissions or browser policy.
+    // If that happens, fall back to the legacy selection-based copy path.
     if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text);
-    } else {
-      const ta = document.createElement("textarea");
-      ta.value = text;
-      ta.setAttribute("readonly", "");
-      ta.style.position = "fixed";
-      ta.style.opacity = "0";
-      document.body.appendChild(ta);
+      try {
+        await navigator.clipboard.writeText(text);
+        toast.success(`${label} ✓`);
+        return true;
+      } catch {
+        // Continue to the fallback below.
+      }
+    }
+
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.setAttribute("readonly", "");
+    ta.setAttribute("aria-hidden", "true");
+    ta.style.position = "fixed";
+    ta.style.top = "0";
+    ta.style.left = "-9999px";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+
+    let copied = false;
+    try {
+      ta.focus();
       ta.select();
-      document.execCommand("copy");
+      ta.setSelectionRange(0, ta.value.length);
+      copied = document.execCommand("copy");
+    } finally {
       document.body.removeChild(ta);
     }
+
+    if (!copied) throw new Error("Clipboard copy command was rejected");
     toast.success(`${label} ✓`);
     return true;
   } catch {
