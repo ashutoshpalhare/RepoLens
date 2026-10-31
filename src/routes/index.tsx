@@ -179,6 +179,7 @@ export function IndexPage() {
           <motion.form
             variants={fadeUp}
             onSubmit={submit}
+            id="explore"
             className="group relative mx-auto mt-8 flex w-full max-w-2xl flex-col gap-2 rounded-2xl border border-line-strong/80 bg-surface/90 p-1.5 shadow-[0_16px_40px_-16px_rgba(0,0,0,0.6)] backdrop-blur-md transition-all duration-200 focus-within:border-accent/80 focus-within:ring-2 focus-within:ring-accent/20 sm:flex-row"
             role="search"
           >
@@ -510,10 +511,10 @@ export function IndexPage() {
         </section>
 
         {/* ---------------------------------------------------------- privacy */}
-        <section className="mt-16 rounded-2xl border border-line bg-surface/70 p-5 sm:p-7">
+        <section id="privacy" aria-labelledby="privacy-title" className="mt-16 scroll-mt-24 rounded-2xl border border-line bg-surface/70 p-5 sm:p-7">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="max-w-xl">
-              <h2 className="flex items-center gap-2 text-sm font-semibold text-ink">
+              <h2 id="privacy-title" className="flex items-center gap-2 text-sm font-semibold text-ink">
                 <Lock className="h-4 w-4 text-accent" aria-hidden="true" />
                 Your data never leaves the browser
               </h2>
