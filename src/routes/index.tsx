@@ -16,12 +16,13 @@ import {
   X,
 } from "lucide-react";
 import { SiteHeader } from "@/components/repolens/SiteHeader";
-import { SocialDock } from "@/components/repolens/SocialDock";
+import { Logo } from "@/components/repolens/SiteHeader";
+import { GithubMark } from "@/components/ui/BrandIcons";
 import { Button } from "@/components/ui/Button";
 import { Kbd } from "@/components/ui/primitives";
 import { parseGitHubInput } from "@/lib/parse";
 import { EASE_OUT, fadeUp, stagger } from "@/lib/motion";
-import { EXAMPLE_REPOS, REPO_URL, SITE } from "@/lib/site";
+import { AUTHOR, CONTRIB_URL, EXAMPLE_REPOS, ISSUES_URL, REPO_URL, SITE } from "@/lib/site";
 import { cn } from "@/utils/cn";
 import { clearRecentRepos, getRecentRepos } from "@/lib/recent";
 
@@ -555,20 +556,65 @@ export function IndexPage() {
         </section>
       </main>
 
-      <footer className="relative border-t border-line bg-surface/40">
-        <div className="mx-auto flex max-w-6xl flex-col items-center gap-4 px-4 py-6 sm:flex-row sm:justify-between sm:px-6">
-          <p className="text-xs text-faint">
-            {SITE.name} · MIT · built by{" "}
-            <a
-              href="https://github.com/ashutoshpalhare"
-              target="_blank"
-              rel="noreferrer noopener"
-              className="rl-link underline"
-            >
-              Ashutosh Palhare
+      <footer className="relative mt-4 overflow-hidden border-t border-line bg-surface/35">
+        <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-accent/50 to-transparent" />
+        <div aria-hidden="true" className="pointer-events-none absolute -right-32 top-0 h-72 w-72 rounded-full bg-accent/5 blur-[100px]" />
+        <div className="relative mx-auto max-w-6xl px-4 pb-6 pt-12 sm:px-6 sm:pt-16">
+          <div className="mb-12 flex flex-col gap-5 rounded-2xl border border-accent-border/40 bg-gradient-to-br from-accent-soft/70 via-surface/90 to-surface/70 p-5 shadow-[0_18px_55px_-35px_var(--rl-accent-glow)] sm:flex-row sm:items-center sm:justify-between sm:p-7">
+            <div className="max-w-xl">
+              <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-accent">Your next codebase, understood</span>
+              <h2 className="mt-2 text-xl font-semibold tracking-tight text-ink sm:text-2xl">Explore a repository with a clearer view.</h2>
+              <p className="mt-2 text-sm leading-relaxed text-muted">No setup. No account. Just a GitHub URL and a better way to explore.</p>
+            </div>
+            <a href="#explore" className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-accent/70 bg-accent px-4 py-2.5 text-sm font-semibold text-[#17120a] shadow-[0_8px_24px_-12px_var(--rl-accent-glow)] transition-all hover:-translate-y-0.5 hover:brightness-110 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
+              Explore a repo <ArrowRight className="h-4 w-4" aria-hidden="true" />
             </a>
-          </p>
-          <SocialDock className="flex-row sm:flex-col" withMail={false} />
+          </div>
+          <div className="grid gap-10 border-b border-line/80 pb-10 sm:grid-cols-2 lg:grid-cols-[1.6fr_1fr_1fr_1fr]">
+            <div className="max-w-xs">
+              <Link to="/" aria-label="RepoLens home" className="inline-flex rounded-lg focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent"><Logo /></Link>
+              <p className="mt-4 text-sm leading-relaxed text-muted">{SITE.description}</p>
+              <div className="mt-5 flex items-center gap-2">
+                <a href={REPO_URL} target="_blank" rel="noreferrer noopener" aria-label="RepoLens on GitHub" className="flex h-9 w-9 items-center justify-center rounded-xl border border-line bg-surface/80 text-muted transition-colors hover:border-accent-border hover:bg-accent-soft hover:text-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"><GithubMark className="h-4 w-4" /></a>
+                <a href={AUTHOR.socials.find((social) => social.id === "linkedin")?.href} target="_blank" rel="noreferrer noopener" aria-label="Creator on LinkedIn" className="flex h-9 items-center rounded-xl border border-line bg-surface/80 px-3 text-xs font-medium text-muted transition-colors hover:border-accent-border hover:bg-accent-soft hover:text-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">LinkedIn</a>
+                <a href={AUTHOR.socials.find((social) => social.id === "portfolio")?.href} target="_blank" rel="noreferrer noopener" aria-label="Creator portfolio" className="flex h-9 items-center rounded-xl border border-line bg-surface/80 px-3 text-xs font-medium text-muted transition-colors hover:border-accent-border hover:bg-accent-soft hover:text-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">Portfolio</a>
+              </div>
+            </div>
+            <nav aria-label="Product links">
+              <h3 className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-faint">Product</h3>
+              <ul className="mt-4 space-y-3 text-sm">
+                <li><a href="#features" className="text-muted transition-colors hover:text-accent">Features</a></li>
+                <li><a href="#how" className="text-muted transition-colors hover:text-accent">How it works</a></li>
+                <li><a href="#privacy" className="text-muted transition-colors hover:text-accent">Privacy</a></li>
+                <li><Link to="/about" className="text-muted transition-colors hover:text-accent">About RepoLens</Link></li>
+              </ul>
+            </nav>
+            <nav aria-label="Resources">
+              <h3 className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-faint">Resources</h3>
+              <ul className="mt-4 space-y-3 text-sm">
+                <li><a href={REPO_URL} target="_blank" rel="noreferrer noopener" className="text-muted transition-colors hover:text-accent">Source code ↗</a></li>
+                <li><a href={CONTRIB_URL} target="_blank" rel="noreferrer noopener" className="text-muted transition-colors hover:text-accent">Contributing guide ↗</a></li>
+                <li><a href="https://opensource.org/license/mit" target="_blank" rel="noreferrer noopener" className="text-muted transition-colors hover:text-accent">MIT License ↗</a></li>
+              </ul>
+            </nav>
+            <nav aria-label="Community">
+              <h3 className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-faint">Community</h3>
+              <ul className="mt-4 space-y-3 text-sm">
+                <li><a href={ISSUES_URL} target="_blank" rel="noreferrer noopener" className="text-muted transition-colors hover:text-accent">Report an issue ↗</a></li>
+                <li><a href={CONTRIB_URL} target="_blank" rel="noreferrer noopener" className="text-muted transition-colors hover:text-accent">Contribute ↗</a></li>
+                <li><a href={AUTHOR.socials.find((social) => social.id === "github")?.href} target="_blank" rel="noreferrer noopener" className="text-muted transition-colors hover:text-accent">Creator profile ↗</a></li>
+              </ul>
+            </nav>
+          </div>
+          <div className="flex flex-col gap-3 pt-5 text-[11px] text-faint sm:flex-row sm:items-center sm:justify-between">
+            <p>© {new Date().getFullYear()} {SITE.name}. Open source under the MIT License.</p>
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span>Built by</span>
+              <a href={AUTHOR.socials.find((social) => social.id === "github")?.href} target="_blank" rel="noreferrer noopener" className="font-medium text-muted transition-colors hover:text-accent">Ashutosh Palhare</a>
+              <span className="text-line-strong">·</span>
+              <span className="inline-flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-ok" /> Runs entirely in your browser</span>
+            </div>
+          </div>
         </div>
       </footer>
     </div>
