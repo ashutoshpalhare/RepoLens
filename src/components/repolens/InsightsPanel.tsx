@@ -54,7 +54,7 @@ export function InsightsPanel({
 }: InsightsPanelProps) {
   if (error) {
     return (
-      <div className={cn("rl-scroll overflow-auto p-4", className)}>
+      <div className={cn("rl-scroll h-full min-h-0 overflow-y-auto p-4", className)}>
         <ErrorState title="Insights unavailable" detail={error} onRetry={onRetry} />
       </div>
     );
@@ -65,7 +65,7 @@ export function InsightsPanel({
     : [];
 
   return (
-    <div className={cn("rl-scroll min-h-0 overflow-auto bg-surface p-3", className)}>
+    <div className={cn("rl-scroll h-full min-h-0 overflow-y-auto overscroll-contain bg-surface p-3", className)}>
       <motion.div
         variants={stagger(0.05)}
         initial="hidden"

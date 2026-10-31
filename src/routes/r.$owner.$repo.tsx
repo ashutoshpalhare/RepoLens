@@ -607,7 +607,7 @@ export function WorkspacePage() {
               animate={{ width: isDesktop ? 340 : "100%", opacity: 1 }}
               exit={{ width: 0, opacity: 0 }}
               transition={{ duration: 0.22, ease: EASE_OUT }}
-              className="relative shrink-0 overflow-hidden border-l border-line"
+              className="relative h-full min-h-0 shrink-0 overflow-hidden border-l border-line"
               aria-label="Insights"
             >
               <div className={cn("h-full", isDesktop ? "w-[340px]" : "w-full")}>
