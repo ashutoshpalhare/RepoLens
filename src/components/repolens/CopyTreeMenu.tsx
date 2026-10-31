@@ -99,7 +99,7 @@ export function CopyTreeMenu({
             exit={{ opacity: 0, y: -4, scale: 0.98 }}
             transition={{ duration: 0.16, ease: EASE_OUT }}
             className={cn(
-              "absolute bottom-full z-50 mb-1.5 w-60 overflow-hidden rounded-xl border border-line-strong/80 bg-surface/95 p-1.5",
+              "absolute bottom-full z-50 mb-1.5 w-64 overflow-hidden rounded-xl border border-line-strong/80 bg-surface/95 p-1.5",
               "shadow-[0_20px_50px_-16px_rgba(0,0,0,0.85)] backdrop-blur-md rl-hairline-top",
               compact ? "left-0" : "right-0",
             )}
