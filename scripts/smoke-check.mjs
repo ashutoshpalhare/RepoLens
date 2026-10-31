@@ -182,6 +182,11 @@ const checks = [
     assert.ok(sparse.health.recommendations.some((item) => item.title === "Add a test suite"));
     assert.match(sparse.health.dimensions.find((item) => item.id === "tests")?.detail ?? "", /coverage are not measured/);
   }],
+  ["insights panel is height-constrained and vertically scrollable", () => {
+    assert.match(insightsPanel, /rl-scroll h-full min-h-0 overflow-y-auto overscroll-contain/);
+    assert.match(insightsPanel, /rl-scroll h-full min-h-0 overflow-y-auto p-4/);
+    assert.match(workspacePage, /relative h-full min-h-0 shrink-0 overflow-hidden border-l border-line/);
+  }],
   ["insights panel displays health, stack detection, and partial-tree caveat", () => {
     assert.match(architectureView, /Architecture Blueprint/);
     assert.match(workspacePage, /partial: Boolean\(treeQuery\.data\?\.truncated\)/);
