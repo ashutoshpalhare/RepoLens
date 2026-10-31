@@ -7,7 +7,6 @@ import {
   ExternalLink,
   FolderTree,
   Gauge,
-  Keyboard,
   Lock,
   Search,
   ShieldCheck,
