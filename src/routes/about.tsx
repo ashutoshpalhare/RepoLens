@@ -7,7 +7,6 @@ import {
   ExternalLink,
   FolderTree,
   Gauge,
-  GitFork,
   Keyboard,
   Lock,
   Search,
