@@ -472,13 +472,13 @@ export function WorkspacePage() {
             <motion.aside
               key="explorer"
               initial={{ width: 0, opacity: 0 }}
-              animate={{ width: isDesktop ? 288 : "100%", opacity: 1 }}
+              animate={{ width: isDesktop ? 320 : "100%", opacity: 1 }}
               exit={{ width: 0, opacity: 0 }}
               transition={{ duration: 0.22, ease: EASE_OUT }}
               className="relative shrink-0 overflow-hidden border-r border-line"
               aria-label="File explorer"
             >
-              <div className={cn("h-full", isDesktop ? "w-72" : "w-full")}>
+              <div className={cn("h-full", isDesktop ? "w-80" : "w-full")}>
                 <FileExplorer
                   nodes={nodes}
                   rootName={rootName}
