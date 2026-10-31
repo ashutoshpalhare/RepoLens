@@ -3,47 +3,57 @@ import { toast } from "sonner";
 
 /* ------------------------------------------------------------------ copy */
 
-export async function copyText(text: string, label = "Copied"): Promise<boolean> {
+function legacyCopyText(text: string): boolean {
+  if (!document.body || typeof document.execCommand !== "function") return false;
+
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.setAttribute("aria-hidden", "true");
+  // Keep it in the viewport: some browsers reject execCommand on off-screen nodes.
+  textarea.style.position = "fixed";
+  textarea.style.top = "0";
+  textarea.style.left = "0";
+  textarea.style.width = "1px";
+  textarea.style.height = "1px";
+  textarea.style.padding = "0";
+  textarea.style.border = "0";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+
   try {
-    // Clipboard API may exist but reject because of permissions or browser policy.
-    // If that happens, fall back to the legacy selection-based copy path.
-    if (navigator.clipboard?.writeText) {
-      try {
-        await navigator.clipboard.writeText(text);
-        toast.success(`${label} ✓`);
-        return true;
-      } catch {
-        // Continue to the fallback below.
-      }
-    }
+    textarea.focus();
+    textarea.select();
+    textarea.setSelectionRange(0, textarea.value.length);
+    return document.execCommand("copy");
+  } catch {
+    return false;
+  } finally {
+    textarea.remove();
+  }
+}
 
-    const ta = document.createElement("textarea");
-    ta.value = text;
-    ta.setAttribute("readonly", "");
-    ta.setAttribute("aria-hidden", "true");
-    ta.style.position = "fixed";
-    ta.style.top = "0";
-    ta.style.left = "-9999px";
-    ta.style.opacity = "0";
-    document.body.appendChild(ta);
-
-    let copied = false;
-    try {
-      ta.focus();
-      ta.select();
-      ta.setSelectionRange(0, ta.value.length);
-      copied = document.execCommand("copy");
-    } finally {
-      document.body.removeChild(ta);
-    }
-
-    if (!copied) throw new Error("Clipboard copy command was rejected");
+export async function copyText(text: string, label = "Copied"): Promise<boolean> {
+  // Run the legacy copy synchronously before the first await. This preserves the
+  // click's transient user activation, which can be lost after a rejected
+  // navigator.clipboard.writeText() promise.
+  if (legacyCopyText(text)) {
     toast.success(`${label} ✓`);
     return true;
-  } catch {
-    toast.error("Copy failed — your browser blocked clipboard access.");
-    return false;
   }
+
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      toast.success(`${label} ✓`);
+      return true;
+    }
+  } catch {
+    // Report one consistent failure below.
+  }
+
+  toast.error("Copy failed — select and copy the text manually, or allow clipboard access.");
+  return false;
 }
 
 export function useCopy() {
