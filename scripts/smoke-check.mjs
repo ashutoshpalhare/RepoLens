@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import ts from "typescript";
 
 const read = (path) => readFile(resolve(process.cwd(), path), "utf8");
-const [html, packageJsonText, viteConfig, router, githubClient, parserSource, homePage, workspacePage, fileExplorer, codeViewer, analysisSource, architectureView, insightsPanel] = await Promise.all([
+const [html, packageJsonText, viteConfig, router, githubClient, parserSource, homePage, workspacePage, fileExplorer, copyTreeMenu, codeViewer, analysisSource, architectureView, insightsPanel] = await Promise.all([
   read("dist/index.html"),
   read("package.json"),
   read("vite.config.ts"),
@@ -14,6 +14,7 @@ const [html, packageJsonText, viteConfig, router, githubClient, parserSource, ho
   read("src/routes/index.tsx"),
   read("src/routes/r.$owner.$repo.tsx"),
   read("src/components/repolens/FileExplorer.tsx"),
+  read("src/components/repolens/CopyTreeMenu.tsx"),
   read("src/components/repolens/CodeViewer.tsx"),
   read("src/lib/analysis.ts"),
   read("src/components/repolens/ArchitectureView.tsx"),
@@ -103,6 +104,11 @@ const checks = [
   ["workspace tree queries use the selected ref", () => assert.match(workspacePage, /queryKey:\s*\[\s*"repo-tree",\s*owner,\s*repo,\s*ref\s*\]/)],
   ["only file blobs or unresolved paths in truncated trees are fetched as source files", () => assert.match(workspacePage, /selectedItem\?\.type\s*===\s*"blob"\s*\|\|/)],
   ["file explorer expands ancestors for deep links", () => assert.match(fileExplorer, /selectedPath\.startsWith\(`\$\{node\.path\}\/`\)/)],
+  ["copy tree menu opens above the clipped explorer footer", () => {
+    assert.match(copyTreeMenu, /absolute bottom-full z-50 mb-1\.5/);
+    assert.match(fileExplorer, /<CopyTreeMenu nodes=\{nodes\} rootName=\{rootName\} compact/);
+    assert.match(workspacePage, /className="relative shrink-0 overflow-hidden border-r border-line"/);
+  }],
   ["file explorer checks every folder before showing collapse-all", () => assert.match(fileExplorer, /allFolders\.every\(\(folder\) => expanded\.has\(folder\.path\)\)/)],
   ["filtered file matches include their parent directory context", () => assert.match(fileExplorer, /showPathContext/)],
   ["file explorer exposes the filtered match count", () => assert.match(fileExplorer, /matches\.length\.toLocaleString\(\)/)],
